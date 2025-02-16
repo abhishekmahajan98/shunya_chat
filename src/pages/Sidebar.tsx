@@ -5,18 +5,12 @@ import './Sidebar.css';
 const Sidebar: React.FC = () => {
   return (
     <div className="sidebar">
-      <button className="new-chat-btn">+ New Chat</button>
-
-      <div className="sidebar-chats">
-        {/* Example chat items */}
-        <div className="chat-item">Chat 1</div>
-        <div className="chat-item">Chat 2</div>
-        <div className="chat-item">Chat 3</div>
+      <div className="sidebar-top">
+        <div className="sidebar-title">T3 Chat</div>
+        <div className="sidebar-item">New to T3 Chat</div>
+        <div className="sidebar-item">FAQ</div>
       </div>
-
-      <div className="sidebar-footer">
-        Powered by GPT
-      </div>
+      <div className="sidebar-login">Login</div>
     </div>
   );
 };

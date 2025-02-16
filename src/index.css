@@ -1,13 +1,13 @@
 /* src/index.css */
 
+/* Minimal reset and ensure full height */
 html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
+  font-family: 'Inter', sans-serif; /* Or any preferred font */
 }
 
 * {
   box-sizing: border-box;
 }
-
-/* Optional: a minimal reset */

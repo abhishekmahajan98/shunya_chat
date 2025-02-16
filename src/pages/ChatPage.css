@@ -1,89 +1,152 @@
 /* src/ChatPage.css */
 
+/* Overall layout: sidebar + main chat area */
 .chat-layout {
     display: flex;
-    height: 100vh; /* fill the screen */
-    background-color: #343541; /* main chat background */
+    height: 100vh;
+    background-color: #343541;
     color: #fff;
-    font-family: sans-serif;
   }
   
-  /* MAIN CHAT AREA (right side) */
+  /* MAIN CHAT AREA */
   .chat-main {
     flex: 1;
     display: flex;
     flex-direction: column;
+    align-items: center; /* Center children horizontally */
   }
   
-  /* TOP HEADER */
-  .chat-header {
-    display: flex;
-    justify-content: flex-end; /* “tell me more” button on the right */
-    align-items: center;
-    padding: 1rem;
-    border-bottom: 1px solid #474a4e;
-  }
-  
-  .tell-me-more-btn {
-    background-color: transparent;
-    border: 1px solid #fff;
-    color: #fff;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    transition: background-color 0.3s;
-  }
-  .tell-me-more-btn:hover {
-    background-color: #474a4e;
-  }
-  
-  /* MESSAGES AREA */
+  /* SCROLLABLE MESSAGES SECTION */
   .chat-messages {
     flex: 1;
-    padding: 1.5rem;
     overflow-y: auto;
+    width: 60%;
+    margin: 1.5rem 0; /* vertical spacing */
+    padding: 1.5rem 0; /* remove horizontal padding so it aligns with the input */
   }
   
-  /* Example styling for a single message block */
+  /* Message styling */
   .message {
-    margin-bottom: 1rem;
-    line-height: 1.4;
-    white-space: pre-wrap; /* preserve line breaks in messages */
-    background-color: #444654; 
-    padding: 1rem;
-    border-radius: 6px;
+    margin: 0.75rem 0;
+    line-height: 1.5;
+    white-space: pre-wrap;
   }
   
-  /* INPUT AREA */
+  .message.llm {
+    text-align: left;
+    margin-right: 20%;
+    color: #e0e0e0;
+  }
+  
+  .message.user {
+    text-align: right;
+    margin-left: 20%;
+    color: #ffffff;
+  }
+  
+  /* BOTTOM INPUT AREA with border and curved top corners */
   .chat-input-container {
+    width: 60%;
+    margin: 1rem auto; /* center horizontally */
     display: flex;
-    border-top: 1px solid #474a4e;
-    padding: 1rem;
+    flex-direction: column;
     align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    border: 1px solid #474a4e;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    background-color: #343541;
   }
   
+  /* Centered text input with rounded corners */
   .chat-input {
-    flex: 1;
-    padding: 0.75rem;
-    border: 1px solid #555;
-    background-color: #3a3b3d;
+    width: 100%;
+    border-radius: 12px;
+    background-color: #40414f;
+    border: none;
+    padding: 0.75rem 1rem;
     color: #fff;
-    margin-right: 1rem;
     font-size: 1rem;
-    border-radius: 4px;
     outline: none;
   }
   
-  .send-btn {
-    background-color: #f72585; /* pink send button */
-    border: none;
-    color: #fff;
-    padding: 0.65rem 1rem;
-    cursor: pointer;
-    font-size: 1.2rem;
-    border-radius: 4px;
-    transition: background-color 0.3s;
+  /* Controls container below the input */
+  .chat-controls {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
   }
+  
+  /* Left controls (model select and system settings) */
+  .left-controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  /* Right controls (send button) */
+  .right-controls {
+    display: flex;
+    align-items: center;
+  }
+  
+  /* "Gemini 2.0 Flash" dropdown button */
+  .model-select {
+    background-color: #3f3f46;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  
+  .model-select:hover {
+    background-color: #52525b;
+  }
+  
+  /* "System Settings" button */
+  .system-settings-btn {
+    background-color: #3f3f46;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  
+  .system-settings-btn:hover {
+    background-color: #52525b;
+  }
+  
+  /* Rounded send button aligned to the right */
+  .send-btn {
+    background-color: #f72585;
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    padding: 0.6rem 0.9rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: opacity 0.3s, transform 0.1s;
+  }
+  
   .send-btn:hover {
-    background-color: #db1f77;
+    opacity: 0.9;
+  }
+  
+  .send-btn:active {
+    transform: scale(0.96);
+  }
+  
+  /* RESPONSIVE: On tablet and smaller screens, use full width */
+  @media screen and (max-width: 1200px) {
+    .chat-messages,
+    .chat-input-container {
+      width: 100%;
+      margin: 0;
+      padding: 1rem;
+    }
   }
   

@@ -1,57 +1,48 @@
 /* src/Sidebar.css */
 
 .sidebar {
-    width: 240px;
+    width: 220px;
     background-color: #202123;
     color: #fff;
     display: flex;
     flex-direction: column;
-    padding: 1rem 0;
+    justify-content: space-between; /* pushes Login to the bottom */
+    border-right: 1px solid #2d2e30;
   }
   
-  /* "New Chat" button at top */
-  .new-chat-btn {
-    display: block;
-    width: 80%;
-    margin: 0 auto 1rem auto;
-    padding: 0.75rem 1rem;
-    background-color: transparent;
-    border: 1px solid #fff;
-    color: #fff;
-    text-align: center;
-    cursor: pointer;
-    transition: background-color 0.3s;
-  }
-  .new-chat-btn:hover {
-    background-color: #2d2e30;
+  /* Top section */
+  .sidebar-top {
+    display: flex;
+    flex-direction: column;
   }
   
-  /* A scrollable area for conversation items */
-  .sidebar-chats {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 1rem;
-  }
-  
-  /* Each conversation item in the sidebar */
-  .chat-item {
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-    background-color: #2d2e30;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s;
-  }
-  .chat-item:hover {
-    background-color: #3a3b3d;
-  }
-  
-  /* Optional: bottom area for any footer or user info */
-  .sidebar-footer {
+  /* Title or clickable items */
+  .sidebar-title {
     padding: 1rem;
-    border-top: 1px solid #2d2e30;
+    font-size: 1.1rem;
+    font-weight: bold;
+    border-bottom: 1px solid #2d2e30;
+  }
+  
+  .sidebar-item {
+    padding: 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid #2d2e30;
+    transition: background-color 0.3s;
+  }
+  .sidebar-item:hover {
+    background-color: #2d2e30;
+  }
+  
+  /* Login at the bottom */
+  .sidebar-login {
+    padding: 1rem;
     text-align: center;
-    font-size: 0.9rem;
-    color: #bbb;
+    border-top: 1px solid #2d2e30;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  .sidebar-login:hover {
+    background-color: #2d2e30;
   }
   
