@@ -1,7 +1,18 @@
+// src/pages/ChatPage.tsx
 import React, { useState, useRef, useEffect } from 'react';
+import { Layout, Input, Button, List, Drawer, Grid } from 'antd';
+import {
+  SendOutlined,
+  PaperClipOutlined,
+  MenuOutlined,
+  MessageOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
 import LeftSidebar from './LeftSidebar';
 import RightSidebar from './RightSidebar';
-import './ChatPage.css';
+
+const { Sider, Content } = Layout;
+const { useBreakpoint } = Grid;
 
 interface Message {
   id: number;
@@ -18,7 +29,7 @@ const ChatPage: React.FC = () => {
     },
     {
       id: 2,
-      text: "whats up?",
+      text: 'whats up?',
       sender: 'user',
     },
     {
@@ -27,34 +38,24 @@ const ChatPage: React.FC = () => {
       sender: 'llm',
     },
   ]);
-
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const [rightSidebarVisible, setRightSidebarVisible] = useState(true);
-  const [leftSidebarVisible, setLeftSidebarVisible] = useState(true);
 
-  // Auto-scroll to the bottom when messages change
+  // Mobile drawer visibility states
+  const [leftDrawerVisible, setLeftDrawerVisible] = useState(false);
+  const [rightDrawerVisible, setRightDrawerVisible] = useState(false);
+
+  // Desktop: left sidebar collapsible state (right sidebar remains non-collapsible)
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+
+  // Determine tablet vs. desktop based on breakpoint
+  const screens = useBreakpoint();
+  const isTablet = !screens.lg; // tablet (and below) use drawers
+
+  // Auto-scroll to bottom when messages update
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  // Collapse sidebars on tablet view
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setLeftSidebarVisible(false);
-        setRightSidebarVisible(false);
-      } else {
-        // Optionally, on larger screens you might want the sidebars open by default:
-        setLeftSidebarVisible(true);
-        setRightSidebarVisible(true);
-      }
-    };
-
-    handleResize(); // Run on mount
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const handleSend = () => {
     if (inputValue.trim()) {
@@ -74,69 +75,131 @@ const ChatPage: React.FC = () => {
   };
 
   return (
-    <div
-      className={`app-layout ${!rightSidebarVisible ? 'right-collapsed' : ''} ${
-        !leftSidebarVisible ? 'left-collapsed' : ''
-      }`}
-    >
-      {/* Left App Menu Sidebar */}
-      <LeftSidebar collapsed={!leftSidebarVisible} />
-
-      {/* Toggle Button for the Left Sidebar */}
-      <button
-        className="toggle-left-sidebar-btn"
-        onClick={() => setLeftSidebarVisible((prev) => !prev)}
-      >
-        {leftSidebarVisible ? '←' : '☰'}
-      </button>
+    <Layout style={{ height: '100vh', position: 'relative' }}>
+      {/* Left Sidebar: Drawer on tablet/mobile, collapsible Sider on desktop */}
+      {isTablet ? (
+        <Drawer
+          title={<>
+            <ThunderboltOutlined style={{ fontSize: '24px', color: '#fff', marginRight: '8px' }} />
+            Shunya Chat
+          </>}
+          placement="left"
+          closable
+          onClose={() => setLeftDrawerVisible(false)}
+          visible={leftDrawerVisible}
+          width={220}
+          bodyStyle={{ padding: 0, backgroundColor: '#2e2e2e' }}
+        >
+          <LeftSidebar collapsed={false} isTablet={true} />
+        </Drawer>
+      ) : (
+        <Sider
+          collapsible
+          collapsed={leftCollapsed}
+          onCollapse={setLeftCollapsed}
+          width={250}
+          theme="dark"
+        >
+          <LeftSidebar collapsed={leftCollapsed} isTablet={false}/>
+        </Sider>
+      )}
 
       {/* Main Chat Area */}
-      <div className="chat-main">
-        <div className="chat-messages">
-          {messages.map((msg) => (
-            <div className={`message ${msg.sender}`} key={msg.id}>
-              {msg.text}
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
+      <Layout>
+        {/* Tablet/mobile header triggers */}
+        {isTablet && (
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid #444',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: '#2e2e2e',
+            }}
+          >
+            <Button
+              type="text"
+              icon={<MenuOutlined style={{ fontSize: '20px', color: '#fff' }} />}
+              onClick={() => setLeftDrawerVisible(true)}
+            />
+            <Button
+              type="text"
+              icon={<MessageOutlined style={{ fontSize: '20px', color: '#fff' }} />}
+              onClick={() => setRightDrawerVisible(true)}
+            />
+          </div>
+        )}
 
-        {/* Bottom Input Area */}
-        <div className="chat-input-container">
-          <input
-            type="text"
-            className="chat-input"
-            placeholder="Type your message here..."
+        <Content style={{ padding: '16px', overflowY: 'auto' }}>
+          <List
+            dataSource={messages}
+            renderItem={(msg) => (
+              <List.Item
+                style={{
+                  justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                }}
+              >
+                <div
+                  style={{
+                    background: msg.sender === 'user' ? '#1890ff' : '#f0f0f0',
+                    color: msg.sender === 'user' ? '#fff' : '#000',
+                    padding: '8px 16px',
+                    borderRadius: '20px',
+                    maxWidth: '60%',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {msg.text}
+                </div>
+              </List.Item>
+            )}
+          />
+          <div ref={messagesEndRef} />
+        </Content>
+
+        {/* Chat Input */}
+        <div
+          style={{
+            padding: '16px',
+            borderTop: '1px solid #444',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Input
+            placeholder="Type your message..."
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            style={{ flex: 1 }}
           />
-
-          <div className="chat-controls">
-            <div className="left-controls">
-              <button className="model-select">Gemini 2.0 Flash ▼</button>
-              <button className="attachment-btn">📎</button>
-            </div>
-            <div className="right-controls">
-              <button className="send-btn" onClick={handleSend}>
-                ➤
-              </button>
-            </div>
-          </div>
+          <Button icon={<PaperClipOutlined />} />
+          <Button type="primary" icon={<SendOutlined />} onClick={handleSend} />
         </div>
-      </div>
+      </Layout>
 
-      {/* Right Message History Sidebar */}
-      <RightSidebar collapsed={!rightSidebarVisible} />
-
-      {/* Toggle Button for the Right Sidebar */}
-      <button
-        className="toggle-right-sidebar-btn"
-        onClick={() => setRightSidebarVisible((prev) => !prev)}
-      >
-        {rightSidebarVisible ? '→' : '☰'}
-      </button>
-    </div>
+      {/* Right Sidebar: Drawer on tablet/mobile, non-collapsible Sider on desktop */}
+      {isTablet ? (
+        <Drawer
+          title="Conversation History"
+          placement="right"
+          closable
+          onClose={() => setRightDrawerVisible(false)}
+          visible={rightDrawerVisible}
+          width={220}
+          bodyStyle={{ padding: 0, backgroundColor: '#2e2e2e' }}
+        >
+          {/* In mobile view, we hide the internal title */}
+          <RightSidebar isTablet={true} />
+        </Drawer>
+      ) : (
+        <Sider width={250} theme="dark">
+          <RightSidebar isTablet={false} />
+        </Sider>
+      )}
+    </Layout>
   );
 };
 
