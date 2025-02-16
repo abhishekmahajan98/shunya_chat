@@ -1,0 +1,45 @@
+/* src/global.css */
+
+/* Override Sider background */
+.ant-layout-sider {
+  background-color: #2e2e2e !important;
+}
+
+/* Override the dark theme background for the Menu and sub-menus */
+.ant-menu-dark,
+.ant-menu-dark .ant-menu-sub {
+  background-color: #2e2e2e !important;
+}
+
+/* Unselected menu items */
+.ant-menu-dark .ant-menu-item {
+  background-color: #2e2e2e !important;
+}
+
+/* Hover, active, and selected states for menu items */
+.ant-menu-dark .ant-menu-item:hover,
+.ant-menu-dark .ant-menu-item-active,
+.ant-menu-dark .ant-menu-item-selected {
+  background-color: #3a3a3a !important;
+}
+
+/* Override the default sider collapse trigger (when sider has width) */
+.ant-layout-sider-trigger {
+  background-color: #2e2e2e !important;
+  border-top: 1px solid #444 !important;
+}
+
+.ant-layout-sider-trigger:hover {
+  background-color: #3a3a3a !important;
+}
+
+/* Override the zero-width collapse trigger (shown when sider is collapsed) */
+.ant-layout-sider-zero-width-trigger {
+  background-color: #2e2e2e !important;
+  border-top: 1px solid #444 !important;
+  color: #fff; /* Ensure the icon is visible */
+}
+
+.ant-layout-sider-zero-width-trigger:hover {
+  background-color: #3a3a3a !important;
+}
