@@ -42,8 +42,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ collapsed, isTablet }) => {
         ))}
       </div>
 
-      {/* Menu */}
-      <div style={{ flex: 1 }}>
+      {/* Menu centered vertically */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}
+      >
         <Menu
           theme="dark"
           mode="inline"
@@ -53,10 +60,18 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ collapsed, isTablet }) => {
           <Menu.Item key="chat" icon={<MessageOutlined />}>
             Chat
           </Menu.Item>
-          <Menu.Item key="spaces" icon={<AppstoreOutlined />} onClick={() => navigate('/spaces')}>
+          <Menu.Item
+            key="spaces"
+            icon={<AppstoreOutlined />}
+            onClick={() => navigate('/spaces')}
+          >
             Spaces
           </Menu.Item>
-          <Menu.Item key="settings" icon={<SettingOutlined />} onClick={() => navigate('/settings')}>
+          <Menu.Item
+            key="settings"
+            icon={<SettingOutlined />}
+            onClick={() => navigate('/settings')}
+          >
             Settings
           </Menu.Item>
         </Menu>
