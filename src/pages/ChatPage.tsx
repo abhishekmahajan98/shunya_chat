@@ -38,6 +38,24 @@ const ChatPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Collapse sidebars on tablet view
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setLeftSidebarVisible(false);
+        setRightSidebarVisible(false);
+      } else {
+        // Optionally, on larger screens you might want the sidebars open by default:
+        setLeftSidebarVisible(true);
+        setRightSidebarVisible(true);
+      }
+    };
+
+    handleResize(); // Run on mount
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleSend = () => {
     if (inputValue.trim()) {
       setMessages((prev) => [
@@ -57,9 +75,9 @@ const ChatPage: React.FC = () => {
 
   return (
     <div
-      className={`app-layout 
-        ${!rightSidebarVisible ? 'right-collapsed' : ''} 
-        ${!leftSidebarVisible ? 'left-collapsed' : ''}`}
+      className={`app-layout ${!rightSidebarVisible ? 'right-collapsed' : ''} ${
+        !leftSidebarVisible ? 'left-collapsed' : ''
+      }`}
     >
       {/* Left App Menu Sidebar */}
       <LeftSidebar collapsed={!leftSidebarVisible} />
