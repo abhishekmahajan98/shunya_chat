@@ -1,10 +1,8 @@
-/* src/ChatPage.css */
-
 /* Overall layout: sidebar + main chat area */
 .chat-layout {
     display: flex;
     height: 100vh;
-    background-color: #343541;
+    background-color: #222;
     color: #fff;
   }
   
@@ -13,7 +11,8 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    align-items: center; /* Center children horizontally */
+    justify-content: space-between; /* Messages at the top, input at the bottom */
+    align-items: center;
   }
   
   /* SCROLLABLE MESSAGES SECTION */
@@ -21,8 +20,7 @@
     flex: 1;
     overflow-y: auto;
     width: 60%;
-    margin: 1.5rem 0; /* vertical spacing */
-    padding: 1.5rem 0; /* remove horizontal padding so it aligns with the input */
+    padding: 1.5rem 0; /* Vertical padding for alignment */
   }
   
   /* Message styling */
@@ -44,26 +42,24 @@
     color: #ffffff;
   }
   
-  /* BOTTOM INPUT AREA with border and curved top corners */
+  /* BOTTOM INPUT AREA */
   .chat-input-container {
     width: 60%;
-    margin: 1rem auto; /* center horizontally */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
+    margin: 0 auto; /* Center horizontally */
     padding: 1rem;
     border: 1px solid #474a4e;
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
-    background-color: #343541;
+    background-color: #333;  /* Professional grey */
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem; /* Increased gap between text input and controls row */
   }
   
-  /* Centered text input with rounded corners */
+  /* Text input with no rounded corners and NO hover effect */
   .chat-input {
     width: 100%;
-    border-radius: 12px;
-    background-color: #40414f;
+    background-color: #333;
     border: none;
     padding: 0.75rem 1rem;
     color: #fff;
@@ -78,7 +74,7 @@
     width: 100%;
   }
   
-  /* Left controls (model select and system settings) */
+  /* Left controls (model select and attachment button) */
   .left-controls {
     display: flex;
     gap: 0.5rem;
@@ -90,11 +86,10 @@
     align-items: center;
   }
   
-  /* "Gemini 2.0 Flash" dropdown button */
+  /* Model selection button with no rounded corners */
   .model-select {
-    background-color: #3f3f46;
+    background-color: #333;
     border: none;
-    border-radius: 4px;
     padding: 0.5rem 0.75rem;
     color: #fff;
     font-size: 0.9rem;
@@ -102,34 +97,39 @@
   }
   
   .model-select:hover {
-    background-color: #52525b;
+    background-color: #3f3f3f;
   }
   
-  /* "System Settings" button */
-  .system-settings-btn {
-    background-color: #3f3f46;
+  /* Attachment icon button with no rounded corners */
+  .attachment-btn {
+    background-color: #333;
     border: none;
-    border-radius: 4px;
     padding: 0.5rem 0.75rem;
     color: #fff;
     font-size: 0.9rem;
     cursor: pointer;
   }
   
-  .system-settings-btn:hover {
-    background-color: #52525b;
+  .attachment-btn:hover {
+    background-color: #3f3f3f;
   }
   
-  /* Rounded send button aligned to the right */
+  /* Fully circular send button */
   .send-btn {
     background-color: #f72585;
     border: none;
-    border-radius: 12px;
     color: #fff;
-    padding: 0.6rem 0.9rem;
     font-size: 1.1rem;
     cursor: pointer;
     transition: opacity 0.3s, transform 0.1s;
+    
+    /* Fully circular style */
+    border-radius: 50%;
+    width: 3rem;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   
   .send-btn:hover {
@@ -140,8 +140,8 @@
     transform: scale(0.96);
   }
   
-  /* RESPONSIVE: On tablet and smaller screens, use full width */
-  @media screen and (max-width: 1200px) {
+  /* RESPONSIVE: On tablet and smaller screens */
+  @media screen and (max-width: 768px) {
     .chat-messages,
     .chat-input-container {
       width: 100%;

@@ -1,4 +1,3 @@
-// src/ChatPage.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import './ChatPage.css';
@@ -82,7 +81,7 @@ const ChatPage: React.FC = () => {
           <div className="chat-controls">
             <div className="left-controls">
               <button className="model-select">Gemini 2.0 Flash ▼</button>
-              <button className="system-settings-btn">System Settings</button>
+              <button className="attachment-btn">📎</button>
             </div>
             <div className="right-controls">
               <button className="send-btn" onClick={handleSend}>
