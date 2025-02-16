@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import Sidebar from './Sidebar';
+import LeftSidebar from './LeftSidebar';
+import RightSidebar from './RightSidebar';
 import './ChatPage.css';
 
 interface Message {
@@ -29,8 +30,10 @@ const ChatPage: React.FC = () => {
 
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [rightSidebarVisible, setRightSidebarVisible] = useState(true);
+  const [leftSidebarVisible, setLeftSidebarVisible] = useState(true);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to the bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -42,7 +45,6 @@ const ChatPage: React.FC = () => {
         { id: prev.length + 1, text: inputValue.trim(), sender: 'user' },
       ]);
       setInputValue('');
-      // For a real app, you might fetch an LLM response here
     }
   };
 
@@ -54,9 +56,23 @@ const ChatPage: React.FC = () => {
   };
 
   return (
-    <div className="chat-layout">
-      <Sidebar />
+    <div
+      className={`app-layout 
+        ${!rightSidebarVisible ? 'right-collapsed' : ''} 
+        ${!leftSidebarVisible ? 'left-collapsed' : ''}`}
+    >
+      {/* Left App Menu Sidebar */}
+      <LeftSidebar collapsed={!leftSidebarVisible} />
 
+      {/* Toggle Button for the Left Sidebar */}
+      <button
+        className="toggle-left-sidebar-btn"
+        onClick={() => setLeftSidebarVisible((prev) => !prev)}
+      >
+        {leftSidebarVisible ? '←' : '☰'}
+      </button>
+
+      {/* Main Chat Area */}
       <div className="chat-main">
         <div className="chat-messages">
           {messages.map((msg) => (
@@ -67,7 +83,7 @@ const ChatPage: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* BOTTOM INPUT AREA */}
+        {/* Bottom Input Area */}
         <div className="chat-input-container">
           <input
             type="text"
@@ -91,6 +107,17 @@ const ChatPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Right Message History Sidebar */}
+      <RightSidebar collapsed={!rightSidebarVisible} />
+
+      {/* Toggle Button for the Right Sidebar */}
+      <button
+        className="toggle-right-sidebar-btn"
+        onClick={() => setRightSidebarVisible((prev) => !prev)}
+      >
+        {rightSidebarVisible ? '→' : '☰'}
+      </button>
     </div>
   );
 };

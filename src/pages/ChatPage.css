@@ -1,152 +1,180 @@
-/* Overall layout: sidebar + main chat area */
-.chat-layout {
-    display: flex;
-    height: 100vh;
-    background-color: #222;
-    color: #fff;
-  }
-  
-  /* MAIN CHAT AREA */
-  .chat-main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between; /* Messages at the top, input at the bottom */
-    align-items: center;
-  }
-  
-  /* SCROLLABLE MESSAGES SECTION */
-  .chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    width: 60%;
-    padding: 1.5rem 0; /* Vertical padding for alignment */
-  }
-  
-  /* Message styling */
-  .message {
-    margin: 0.75rem 0;
-    line-height: 1.5;
-    white-space: pre-wrap;
-  }
-  
-  .message.llm {
-    text-align: left;
-    margin-right: 20%;
-    color: #e0e0e0;
-  }
-  
-  .message.user {
-    text-align: right;
-    margin-left: 20%;
-    color: #ffffff;
-  }
-  
-  /* BOTTOM INPUT AREA */
+/* ChatPage.css */
+
+.app-layout {
+  display: flex;
+  height: 100vh;
+  background-color: #222;
+  color: #fff;
+  position: relative;
+}
+
+/* Main Chat Area */
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  transition: width 0.3s ease;
+}
+
+/* Chat messages area */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  width: 60%;
+  padding: 1.5rem 0;
+}
+
+.message {
+  margin: 0.75rem 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.message.llm {
+  text-align: left;
+  margin-right: 20%;
+  color: #e0e0e0;
+}
+
+.message.user {
+  text-align: right;
+  margin-left: 20%;
+  color: #ffffff;
+}
+
+/* Bottom Input Area */
+.chat-input-container {
+  width: 60%;
+  margin: 0 auto;
+  padding: 1rem;
+  border: 1px solid #474a4e;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  background-color: #333;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.chat-input {
+  width: 100%;
+  background-color: #333;
+  border: none;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  font-size: 1rem;
+  outline: none;
+}
+
+/* Chat controls */
+.chat-controls {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.left-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.right-controls {
+  display: flex;
+  align-items: center;
+}
+
+.model-select {
+  background-color: #333;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.model-select:hover {
+  background-color: #3f3f3f;
+}
+
+.attachment-btn {
+  background-color: #333;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.attachment-btn:hover {
+  background-color: #3f3f3f;
+}
+
+.send-btn {
+  background-color: #f72585;
+  border: none;
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: opacity 0.3s, transform 0.1s;
+  border-radius: 50%;
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.send-btn:hover {
+  opacity: 0.9;
+}
+
+.send-btn:active {
+  transform: scale(0.96);
+}
+
+/* Toggle button for the right sidebar */
+.toggle-right-sidebar-btn {
+  position: absolute;
+  top: 1rem;
+  right: 220px;
+  z-index: 10;
+  background-color: #202123;
+  border: none;
+  padding: 0.5rem;
+  color: #fff;
+  cursor: pointer;
+  transition: right 0.3s ease;
+}
+
+.app-layout.right-collapsed .toggle-right-sidebar-btn {
+  right: 1rem;
+}
+
+/* Toggle button for the left sidebar */
+.toggle-left-sidebar-btn {
+  position: absolute;
+  top: 1rem;
+  left: 220px;
+  z-index: 10;
+  background-color: #202123;
+  border: none;
+  padding: 0.5rem;
+  color: #fff;
+  cursor: pointer;
+  transition: left 0.3s ease;
+}
+
+.app-layout.left-collapsed .toggle-left-sidebar-btn {
+  left: 1rem;
+}
+
+@media screen and (max-width: 1200px) {
+  .chat-messages,
   .chat-input-container {
-    width: 60%;
-    margin: 0 auto; /* Center horizontally */
+    width: 100%;
+    margin: 0;
     padding: 1rem;
-    border: 1px solid #474a4e;
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    background-color: #333;  /* Professional grey */
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem; /* Increased gap between text input and controls row */
   }
-  
-  /* Text input with no rounded corners and NO hover effect */
-  .chat-input {
-    width: 100%;
-    background-color: #333;
-    border: none;
-    padding: 0.75rem 1rem;
-    color: #fff;
-    font-size: 1rem;
-    outline: none;
-  }
-  
-  /* Controls container below the input */
-  .chat-controls {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-  }
-  
-  /* Left controls (model select and attachment button) */
-  .left-controls {
-    display: flex;
-    gap: 0.5rem;
-  }
-  
-  /* Right controls (send button) */
-  .right-controls {
-    display: flex;
-    align-items: center;
-  }
-  
-  /* Model selection button with no rounded corners */
-  .model-select {
-    background-color: #333;
-    border: none;
-    padding: 0.5rem 0.75rem;
-    color: #fff;
-    font-size: 0.9rem;
-    cursor: pointer;
-  }
-  
-  .model-select:hover {
-    background-color: #3f3f3f;
-  }
-  
-  /* Attachment icon button with no rounded corners */
-  .attachment-btn {
-    background-color: #333;
-    border: none;
-    padding: 0.5rem 0.75rem;
-    color: #fff;
-    font-size: 0.9rem;
-    cursor: pointer;
-  }
-  
-  .attachment-btn:hover {
-    background-color: #3f3f3f;
-  }
-  
-  /* Fully circular send button */
-  .send-btn {
-    background-color: #f72585;
-    border: none;
-    color: #fff;
-    font-size: 1.1rem;
-    cursor: pointer;
-    transition: opacity 0.3s, transform 0.1s;
-    
-    /* Fully circular style */
-    border-radius: 50%;
-    width: 3rem;
-    height: 3rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .send-btn:hover {
-    opacity: 0.9;
-  }
-  
-  .send-btn:active {
-    transform: scale(0.96);
-  }
-  
-  /* RESPONSIVE: On tablet and smaller screens */
-  @media screen and (max-width: 768px) {
-    .chat-messages,
-    .chat-input-container {
-      width: 100%;
-      margin: 0;
-      padding: 1rem;
-    }
-  }
-  
+}
