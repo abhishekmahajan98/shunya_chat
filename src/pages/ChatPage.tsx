@@ -1,6 +1,6 @@
 // src/pages/ChatPage.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { Layout, Input, Button, List, Drawer, Grid, Dropdown, Menu } from 'antd';
+import { Layout, Input, Button, List, Drawer, Grid, Dropdown, Menu, Card, Typography } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -14,6 +14,7 @@ import RightSidebar from './RightSidebar';
 
 const { Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
+const { Title, Paragraph } = Typography;
 
 interface Message {
   id: number;
@@ -107,6 +108,34 @@ const ChatPage: React.FC = () => {
     </Menu>
   );
 
+  // Custom welcome screen if there are no messages.
+  const renderWelcomeScreen = () => (
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      <Card style={{ maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: '8px' }}>
+        <ThunderboltOutlined style={{ fontSize: '48px', color: '#1890ff' }} />
+        <Title level={2} style={{ marginTop: '16px' }}>
+          Welcome to Shunya Chat
+        </Title>
+        <Paragraph style={{ color: 'off-white' }}>
+          Experience the future of conversation with our intelligent AI assistant. To get started, choose
+          the AI model that best suits your needs and let the conversation flow.
+        </Paragraph>
+        <Dropdown overlay={modelMenu} trigger={['click']}>
+          <Button type="primary" size="large">
+            Select AI Model (Current: {selectedModel.name})
+          </Button>
+        </Dropdown>
+      </Card>
+    </div>
+  );
+
   return (
     <Layout style={{ height: '100vh', position: 'relative' }}>
       {/* Left Sidebar */}
@@ -160,33 +189,40 @@ const ChatPage: React.FC = () => {
         )}
 
         <Content style={{ padding: '16px', overflowY: 'auto' }}>
-          <List
-            locale={{ emptyText: null }} // set to null to hide default message 
-            dataSource={messages}
-            renderItem={(msg) => (
-              <List.Item style={{ justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
-                <div
-                  style={{
-                    background: msg.sender === 'user' ? '#1890ff' : '#f0f0f0',
-                    color: msg.sender === 'user' ? '#fff' : '#000',
-                    padding: '8px 16px',
-                    borderRadius: '20px',
-                    maxWidth: '60%',
-                    wordBreak: 'break-word',
-                    whiteSpace: 'pre-wrap', // preserve newlines
-                  }}
-                >
-                  {msg.text}
-                </div>
-              </List.Item>
-            )}
-          />
-          <div ref={messagesEndRef} />
+          {messages.length === 0 ? (
+            renderWelcomeScreen()
+          ) : (
+            <>
+              <List
+                locale={{ emptyText: null }} // hide default empty message 
+                dataSource={messages}
+                renderItem={(msg) => (
+                  <List.Item style={{ justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div
+                      style={{
+                        background: msg.sender === 'user' ? '#1890ff' : '#f0f0f0',
+                        color: msg.sender === 'user' ? '#fff' : '#000',
+                        padding: '8px 16px',
+                        borderRadius: '20px',
+                        maxWidth: '60%',
+                        wordBreak: 'break-word',
+                        whiteSpace: 'pre-wrap', // preserve newlines
+                      }}
+                    >
+                      {msg.text}
+                    </div>
+                  </List.Item>
+                )}
+              />
+              <div ref={messagesEndRef} />
+            </>
+          )}
         </Content>
 
         {/* Chat Input Section */}
         <div style={{ padding: '16px', borderTop: '1px solid #444' }}>
           <Input.TextArea
+            id="chat-input"
             placeholder="Type your message..."
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
