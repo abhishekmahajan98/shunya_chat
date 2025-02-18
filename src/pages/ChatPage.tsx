@@ -1,6 +1,6 @@
 // src/pages/ChatPage.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { Layout, Input, Button, List, Drawer, Grid, Dropdown, Menu, Card, Typography } from 'antd';
+import { Layout, Input, Button, List, Drawer, Grid, Dropdown, Menu, Card, Typography, Spin } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -20,6 +20,7 @@ interface Message {
   id: number;
   text: string;
   sender: 'user' | 'llm';
+  pending?: boolean;
 }
 
 interface ModelOption {
@@ -35,7 +36,7 @@ const modelOptions: ModelOption[] = [
 ];
 
 const ChatPage: React.FC = () => {
-  // Start with an empty messages array.
+  // Messages state
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -64,14 +65,27 @@ const ChatPage: React.FC = () => {
           text: inputValue,
           sender: 'user',
         };
-        const llmMessage: Message = {
+        // Add a pending LLM message that will show a spinner
+        const pendingLLMMessage: Message = {
           id: prev.length + 2,
-          text: 'LLM response',
+          text: '',
           sender: 'llm',
+          pending: true,
         };
-        return [...prev, userMessage, llmMessage];
+        return [...prev, userMessage, pendingLLMMessage];
       });
       setInputValue('');
+
+      // After 5 seconds, update the pending LLM message to its final response
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.pending
+              ? { ...msg, text: 'LLM response', pending: false }
+              : msg
+          )
+        );
+      }, 5000);
     }
   };
 
@@ -123,14 +137,12 @@ const ChatPage: React.FC = () => {
         <Title level={2} style={{ marginTop: '16px' }}>
           Welcome to Shunya Chat
         </Title>
-        <Paragraph style={{ color: 'off-white' }}>
-          Experience the future of conversation with our intelligent AI assistant. To get started, choose
-          the AI model that best suits your needs and let the conversation flow.
+        <Paragraph style={{ color: '#555' }}>
+          Experience the future of conversation with our intelligent AI assistant. To get started,
+          choose the AI model that best suits your needs and watch the magic unfold!
         </Paragraph>
         <Dropdown overlay={modelMenu} trigger={['click']}>
-          <Button type="primary" size="large">
-            Select AI Model (Current: {selectedModel.name})
-          </Button>
+            <Button icon={<SwapOutlined />}>{selectedModel.name}</Button>
         </Dropdown>
       </Card>
     </div>
@@ -207,9 +219,12 @@ const ChatPage: React.FC = () => {
                         maxWidth: '60%',
                         wordBreak: 'break-word',
                         whiteSpace: 'pre-wrap', // preserve newlines
+                        display: 'flex',
+                        alignItems: 'center',
                       }}
                     >
-                      {msg.text}
+                      {msg.pending ? <Spin size="small" style={{ marginRight: 8 }} /> : null}
+                      {msg.pending ? 'Thinking...' : msg.text}
                     </div>
                   </List.Item>
                 )}
