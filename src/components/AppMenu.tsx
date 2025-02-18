@@ -1,4 +1,3 @@
-// src/pages/LeftSidebar.tsx
 import React from 'react';
 import { Menu } from 'antd';
 import {
@@ -9,12 +8,12 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
-interface LeftSidebarProps {
+interface AppMenuProps {
   collapsed: boolean;
   isTablet?: boolean;
 }
 
-const LeftSidebar: React.FC<LeftSidebarProps> = ({ collapsed, isTablet }) => {
+const AppMenu: React.FC<AppMenuProps> = ({ collapsed, isTablet }) => {
   const navigate = useNavigate();
 
   return (
@@ -32,46 +31,33 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ collapsed, isTablet }) => {
           justifyContent: 'center',
         }}
       >
-        {isTablet ? null : (collapsed ? (
-          <ThunderboltOutlined style={{ fontSize: '24px', color: '#fff' }} />
-        ) : (
-          <>
-            <ThunderboltOutlined style={{ fontSize: '24px', color: '#fff', marginRight: '8px' }} />
-            Shunya Chat
-          </>
-        ))}
+        {isTablet ? null : (
+          collapsed ? (
+            <ThunderboltOutlined style={{ fontSize: '24px', color: '#fff' }} />
+          ) : (
+            <>
+              <ThunderboltOutlined style={{ fontSize: '24px', color: '#fff', marginRight: '8px' }} />
+              Shunya Chat
+            </>
+          )
+        )}
       </div>
 
-      {/* Menu centered vertically */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}
-      >
+      {/* Menu */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <Menu
           theme="dark"
           mode="inline"
           defaultSelectedKeys={['chat']}
           style={{ borderRight: 0 }}
         >
-          <Menu.Item key="chat" icon={<MessageOutlined />}>
+          <Menu.Item key="chat" icon={<MessageOutlined />} onClick={() => navigate('/')}>
             Chat
           </Menu.Item>
-          <Menu.Item
-            key="spaces"
-            icon={<AppstoreOutlined />}
-            onClick={() => navigate('/spaces')}
-          >
+          <Menu.Item key="spaces" icon={<AppstoreOutlined />} onClick={() => navigate('/spaces')}>
             Spaces
           </Menu.Item>
-          <Menu.Item
-            key="settings"
-            icon={<SettingOutlined />}
-            onClick={() => navigate('/settings')}
-          >
+          <Menu.Item key="settings" icon={<SettingOutlined />} onClick={() => navigate('/settings')}>
             Settings
           </Menu.Item>
         </Menu>
@@ -80,4 +66,4 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ collapsed, isTablet }) => {
   );
 };
 
-export default LeftSidebar;
+export default AppMenu;
