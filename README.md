@@ -108,11 +108,11 @@ The production build will be generated in the `/build` directory.
 
 Below are some screenshots of Shunya Chat:
 
-![Screenshot 1](assets/screenshots/ss1.jpg)
-![Screenshot 2](assets/screenshots/ss2jpg)
-![Screenshot 3](assets/screenshots/ss3.jpg)
-![Screenshot 4](assets/screenshots/ss4jpg)
-![Screenshot 5](assets/screenshots/ss5.jpg)
+![Screenshot 1](src/assets/screenshots/ss1.jpg)
+![Screenshot 2](src/assets/screenshots/ss2jpg)
+![Screenshot 3](src/assets/screenshots/ss3.jpg)
+![Screenshot 4](src/assets/screenshots/ss4jpg)
+![Screenshot 5](src/assets/screenshots/ss5.jpg)
 <!-- Add additional screenshots as needed -->
 
 ---
