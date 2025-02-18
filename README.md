@@ -113,13 +113,3 @@ Below are some screenshots of Shunya Chat:
 ![Screenshot 3](src/assets/screenshots/ss3.png)
 ![Screenshot 4](src/assets/screenshots/ss4.png)
 ![Screenshot 5](src/assets/screenshots/ss5.png)
-<!-- Add additional screenshots as needed -->
-
----
-
-Enjoy using Shunya Chat and happy chatting!
-```
-
----
-
-You can adjust any sections as necessary. Simply save this content as `README.md` in your project’s root directory.
