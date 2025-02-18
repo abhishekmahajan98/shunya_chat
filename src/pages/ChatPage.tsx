@@ -1,4 +1,3 @@
-// src/pages/ChatPage.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Layout, Input, Button, List, Drawer, Grid, Dropdown, Menu, Card, Typography, Spin } from 'antd';
 import {
@@ -9,8 +8,8 @@ import {
   ThunderboltOutlined,
   SwapOutlined,
 } from '@ant-design/icons';
-import LeftSidebar from './LeftSidebar';
-import RightSidebar from './RightSidebar';
+import AppMenu from '../components/AppMenu';
+import RightSidebar from '../components/RightSidebar';
 
 const { Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
@@ -31,7 +30,7 @@ interface ModelOption {
 const modelOptions: ModelOption[] = [
   { name: 'Gemini 2.0 Flash', detail: 'Good for coding' },
   { name: 'Gemini 2.0 Ultra', detail: 'Great for general tasks' },
-  { name: 'GPT-4', detail: 'Legalcy model by OAI' },
+  { name: 'GPT-4', detail: 'Legancy model by OAI' },
   { name: 'GPT-3.5 Turbo', detail: 'Fast and efficient' },
 ];
 
@@ -142,7 +141,7 @@ const ChatPage: React.FC = () => {
           choose the AI model that best suits your needs and watch the magic unfold!
         </Paragraph>
         <Dropdown overlay={modelMenu} trigger={['click']}>
-            <Button icon={<SwapOutlined />}>{selectedModel.name}</Button>
+          <Button icon={<SwapOutlined />}>{selectedModel.name}</Button>
         </Dropdown>
       </Card>
     </div>
@@ -150,7 +149,7 @@ const ChatPage: React.FC = () => {
 
   return (
     <Layout style={{ height: '100vh', position: 'relative' }}>
-      {/* Left Sidebar */}
+      {/* App Menu */}
       {isTablet ? (
         <Drawer
           title={
@@ -166,11 +165,11 @@ const ChatPage: React.FC = () => {
           width={220}
           bodyStyle={{ padding: 0, backgroundColor: '#2e2e2e' }}
         >
-          <LeftSidebar collapsed={false} isTablet={true} />
+          <AppMenu collapsed={false} isTablet={true} />
         </Drawer>
       ) : (
         <Sider collapsible collapsed={leftCollapsed} onCollapse={setLeftCollapsed} width={250} theme="dark">
-          <LeftSidebar collapsed={leftCollapsed} isTablet={false} />
+          <AppMenu collapsed={leftCollapsed} isTablet={false} />
         </Sider>
       )}
 
@@ -218,12 +217,12 @@ const ChatPage: React.FC = () => {
                         borderRadius: '20px',
                         maxWidth: '60%',
                         wordBreak: 'break-word',
-                        whiteSpace: 'pre-wrap', // preserve newlines
+                        whiteSpace: 'pre-wrap',
                         display: 'flex',
                         alignItems: 'center',
                       }}
                     >
-                      {msg.pending ? <Spin size="small" style={{ marginRight: 8 }} /> : null}
+                      {msg.pending && <Spin size="small" style={{ marginRight: 8 }} />}
                       {msg.pending ? 'Thinking...' : msg.text}
                     </div>
                   </List.Item>
