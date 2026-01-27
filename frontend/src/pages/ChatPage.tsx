@@ -56,6 +56,7 @@ const ChatPage = () => {
   const [leftDrawerVisible, setLeftDrawerVisible] = useState(false);
   const [rightDrawerVisible, setRightDrawerVisible] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightExpanded, setRightExpanded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
 
   const screens = useBreakpoint();
@@ -321,7 +322,17 @@ const ChatPage = () => {
       )}
 
       {/* Main Chat Area */}
-      <Layout style={{ background: 'var(--color-bg)' }}>
+      <Layout style={{
+        background: 'var(--color-bg)',
+        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        // When right is expanded, collapse this area completely
+        flex: rightExpanded ? '0 0 0' : 1,
+        width: rightExpanded ? 0 : 'auto',
+        minWidth: 0,
+        overflow: 'hidden',
+        opacity: rightExpanded ? 0 : 1,
+        pointerEvents: rightExpanded ? 'none' : 'auto',
+      }}>
         {/* Mobile Header */}
         {isTablet && (
           <div style={{
@@ -620,9 +631,37 @@ const ChatPage = () => {
         >
           <RightSidebar isTablet={true} />
         </Drawer>
+      ) : rightExpanded ? (
+        <div style={{
+          ...rightSiderStyle,
+          flex: 1,
+          width: 'auto',
+          minWidth: 0,
+          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <RightSidebar
+            isTablet={false}
+            expanded={rightExpanded}
+            onToggleExpand={() => setRightExpanded(!rightExpanded)}
+          />
+        </div>
       ) : (
-        <Sider width={280} style={rightSiderStyle} trigger={null}>
-          <RightSidebar isTablet={false} />
+        <Sider
+          width={280}
+          style={{
+            ...rightSiderStyle,
+            transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+          trigger={null}
+        >
+          <RightSidebar
+            isTablet={false}
+            expanded={rightExpanded}
+            onToggleExpand={() => setRightExpanded(!rightExpanded)}
+          />
         </Sider>
       )}
     </Layout>
