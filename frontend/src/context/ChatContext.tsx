@@ -217,26 +217,26 @@ const mockSpaces: Space[] = [
 
 const mockAgents: Agent[] = [
     // Research
-    { id: 'quick-search', name: 'Quick Search', icon: '🔍', description: 'Fast web lookup for instant answers', category: 'research', isFavorite: true, isActive: false },
-    { id: 'dexter', name: 'Dexter', icon: '🔬', description: 'Deep research - runs in background, emails results', category: 'research', isFavorite: false, isActive: false, isBackground: true },
-    { id: 'market-analyzer', name: 'Market Analyzer', icon: '📈', description: 'Real-time market trends and analysis', category: 'research', isFavorite: false, isActive: false },
-    { id: 'news-aggregator', name: 'News Aggregator', icon: '📰', description: 'Latest news from trusted sources', category: 'research', isFavorite: false, isActive: false },
+    { id: 'quick-search', name: 'Quick Search', icon: 'search', description: 'Fast web lookup for instant answers', category: 'research', isFavorite: true, isActive: false },
+    { id: 'dexter', name: 'Dexter', icon: 'experiment', description: 'Deep research - runs in background, emails results', category: 'research', isFavorite: false, isActive: false, isBackground: true },
+    { id: 'market-analyzer', name: 'Market Analyzer', icon: 'line-chart', description: 'Real-time market trends and analysis', category: 'research', isFavorite: false, isActive: false },
+    { id: 'news-aggregator', name: 'News Aggregator', icon: 'read', description: 'Latest news from trusted sources', category: 'research', isFavorite: false, isActive: false },
 
     // Compliance
-    { id: 'compliance-checker', name: 'Compliance Checker', icon: '✅', description: 'Verify regulatory compliance', category: 'compliance', isFavorite: true, isActive: false },
-    { id: 'policy-reviewer', name: 'Policy Reviewer', icon: '📜', description: 'Review documents against policies', category: 'compliance', isFavorite: false, isActive: false },
-    { id: 'risk-assessor', name: 'Risk Assessor', icon: '⚠️', description: 'Identify and assess potential risks', category: 'compliance', isFavorite: false, isActive: false },
+    { id: 'compliance-checker', name: 'Compliance Checker', icon: 'check-circle', description: 'Verify regulatory compliance', category: 'compliance', isFavorite: true, isActive: false },
+    { id: 'policy-reviewer', name: 'Policy Reviewer', icon: 'book', description: 'Review documents against policies', category: 'compliance', isFavorite: false, isActive: false },
+    { id: 'risk-assessor', name: 'Risk Assessor', icon: 'warning', description: 'Identify and assess potential risks', category: 'compliance', isFavorite: false, isActive: false },
 
     // Finance
-    { id: 'financial-modeler', name: 'Financial Modeler', icon: '💹', description: 'Build and analyze financial models', category: 'finance', isFavorite: true, isActive: false },
-    { id: 'data-cruncher', name: 'Data Cruncher', icon: '📊', description: 'Analyze data and generate insights', category: 'finance', isFavorite: false, isActive: true },
-    { id: 'audit-assistant', name: 'Audit Assistant', icon: '📑', description: 'Prepare audit documentation', category: 'finance', isFavorite: false, isActive: false },
+    { id: 'financial-modeler', name: 'Financial Modeler', icon: 'fund', description: 'Build and analyze financial models', category: 'finance', isFavorite: true, isActive: false },
+    { id: 'data-cruncher', name: 'Data Cruncher', icon: 'bar-chart', description: 'Analyze data and generate insights', category: 'finance', isFavorite: false, isActive: true },
+    { id: 'audit-assistant', name: 'Audit Assistant', icon: 'audit', description: 'Prepare audit documentation', category: 'finance', isFavorite: false, isActive: false },
 
     // Automation
-    { id: 'report-generator', name: 'Report Generator', icon: '📄', description: 'Create formatted reports automatically', category: 'automation', isFavorite: true, isActive: false },
-    { id: 'email-composer', name: 'Email Composer', icon: '📧', description: 'Draft professional emails', category: 'automation', isFavorite: false, isActive: false },
-    { id: 'meeting-scheduler', name: 'Meeting Scheduler', icon: '📅', description: 'Schedule and organize meetings', category: 'automation', isFavorite: false, isActive: false },
-    { id: 'task-manager', name: 'Task Manager', icon: '📝', description: 'Create and track tasks', category: 'automation', isFavorite: false, isActive: false },
+    { id: 'report-generator', name: 'Report Generator', icon: 'file-text', description: 'Create formatted reports automatically', category: 'automation', isFavorite: true, isActive: false },
+    { id: 'email-composer', name: 'Email Composer', icon: 'mail', description: 'Draft professional emails', category: 'automation', isFavorite: false, isActive: false },
+    { id: 'meeting-scheduler', name: 'Meeting Scheduler', icon: 'calendar', description: 'Schedule and organize meetings', category: 'automation', isFavorite: false, isActive: false },
+    { id: 'task-manager', name: 'Task Manager', icon: 'schedule', description: 'Create and track tasks', category: 'automation', isFavorite: false, isActive: false },
 ];
 
 // Context Type

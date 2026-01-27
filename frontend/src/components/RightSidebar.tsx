@@ -9,16 +9,17 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useChat, type Agent, type AgentCategory } from '../context/ChatContext';
+import SpaceIcon from './SpaceIcon';
 
 interface RightSidebarProps {
   isTablet?: boolean;
 }
 
 const categoryLabels: Record<AgentCategory, { label: string; icon: string }> = {
-  research: { label: 'Research', icon: '🧪' },
-  compliance: { label: 'Compliance', icon: '📋' },
-  finance: { label: 'Finance', icon: '💰' },
-  automation: { label: 'Automation', icon: '⚙️' },
+  research: { label: 'Research', icon: 'experiment' },
+  compliance: { label: 'Compliance', icon: 'safety' },
+  finance: { label: 'Finance', icon: 'dollar' },
+  automation: { label: 'Automation', icon: 'robot' },
 };
 
 const AgentCard = ({
@@ -58,7 +59,7 @@ const AgentCard = ({
       transition: 'all 0.2s ease',
       position: 'relative',
     }}>
-      {agent.icon}
+      <SpaceIcon icon={agent.icon} style={{ fontSize: 18, color: agent.isActive ? 'var(--color-primary-inverse)' : 'var(--color-text-secondary)' }} />
       {agent.isBackground && (
         <ClockCircleOutlined style={{
           position: 'absolute',
@@ -327,10 +328,12 @@ const RightSidebar = ({ isTablet = false }: RightSidebarProps) => {
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ fontSize: 10 }}>
+                <span style={{
+                  fontSize: 10,
+                }}>
                   {isCollapsed ? <RightOutlined /> : <DownOutlined />}
                 </span>
-                {icon} {label}
+                <SpaceIcon icon={icon} style={{ fontSize: 14, color: 'var(--color-text-secondary)' }} /> {label}
                 <span style={{
                   fontSize: 10,
                   color: 'var(--color-text-tertiary)',

@@ -53,6 +53,7 @@ import {
     SnippetsOutlined,
     CarryOutOutlined,
     ScheduleOutlined,
+    SearchOutlined,
 } from '@ant-design/icons';
 
 // Icon name to component mapping
@@ -110,6 +111,11 @@ export const spaceIconMap: Record<string, React.ComponentType<{ style?: React.CS
     snippets: SnippetsOutlined,
     'carry-out': CarryOutOutlined,
     schedule: ScheduleOutlined,
+    search: SearchOutlined,
+    read: FileTextOutlined,
+    warning: SafetyOutlined,
+    robot: SettingOutlined,
+    api: CloudOutlined,
 };
 
 // Categorized icons for the picker
