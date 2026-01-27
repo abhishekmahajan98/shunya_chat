@@ -1,10 +1,27 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 
 // Types
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+}
+
+export type MemberRole = 'viewer' | 'editor' | 'admin';
+
+export interface SpaceMember {
+    userId: string;
+    user: User;
+    role: MemberRole;
+    addedAt: Date;
+}
+
 export interface SpaceItem {
     id: string;
     name: string;
     type: 'folder' | 'document';
+    size?: number; // in KB
     children?: SpaceItem[];
 }
 
@@ -16,6 +33,9 @@ export interface Space {
     isPersonal?: boolean;
     documentCount: number;
     children?: SpaceItem[];
+    ownerId?: string;       // undefined for personal space
+    owner?: User;
+    members?: SpaceMember[];
 }
 
 export type AgentCategory = 'research' | 'compliance' | 'finance' | 'automation';
@@ -114,17 +134,85 @@ const personalSpaceChildren: SpaceItem[] = [
     { id: 'doc-readme', name: 'README.md', type: 'document' },
 ];
 
+// Mock Users
+export const mockUsers: User[] = [
+    { id: 'current-user', name: 'You', email: 'you@company.com' },
+    { id: 'alice', name: 'Alice Smith', email: 'alice@company.com' },
+    { id: 'bob', name: 'Bob Johnson', email: 'bob@company.com' },
+    { id: 'carol', name: 'Carol White', email: 'carol@company.com' },
+    { id: 'david', name: 'David Lee', email: 'david@company.com' },
+    { id: 'emma', name: 'Emma Davis', email: 'emma@company.com' },
+];
+
+const currentUser = mockUsers[0];
+const alice = mockUsers[1];
+const bob = mockUsers[2];
+const carol = mockUsers[3];
+
 const mockSpaces: Space[] = [
-    { id: 'personal', name: 'Personal Space', icon: '👤', isPinned: true, isPersonal: true, documentCount: 8, children: personalSpaceChildren },
-    { id: 'q4-reports', name: 'Q4 Reports', icon: '📊', isPinned: true, documentCount: 15 },
-    { id: 'legal', name: 'Legal Documents', icon: '⚖️', isPinned: false, documentCount: 42 },
-    { id: 'marketing', name: 'Marketing Analytics', icon: '📈', isPinned: false, documentCount: 28 },
-    { id: 'client-portfolios', name: 'Client Portfolios', icon: '💼', isPinned: false, documentCount: 156 },
-    { id: 'compliance', name: 'Compliance Records', icon: '✅', isPinned: false, documentCount: 89 },
-    { id: 'hr', name: 'HR Policies', icon: '👥', isPinned: false, documentCount: 34 },
-    { id: 'finance', name: 'Financial Statements', icon: '💰', isPinned: false, documentCount: 67 },
-    { id: 'audit', name: 'Audit Trail', icon: '🔍', isPinned: false, documentCount: 203 },
-    { id: 'contracts', name: 'Contracts', icon: '📝', isPinned: false, documentCount: 78 },
+    { id: 'personal', name: 'Personal Space', icon: 'user', isPinned: true, isPersonal: true, documentCount: 8, children: personalSpaceChildren },
+    {
+        id: 'q4-reports',
+        name: 'Q4 Reports',
+        icon: 'bar-chart',
+        isPinned: true,
+        documentCount: 15,
+        ownerId: 'current-user',
+        owner: currentUser,
+        members: [
+            { userId: 'alice', user: alice, role: 'editor', addedAt: new Date('2024-10-01') },
+            { userId: 'bob', user: bob, role: 'viewer', addedAt: new Date('2024-10-15') },
+        ],
+        children: [
+            { id: 'doc-q4-summary', name: 'Q4 Summary.pdf', type: 'document', size: 245 },
+            { id: 'doc-revenue', name: 'Revenue Report.xlsx', type: 'document', size: 128 },
+            { id: 'doc-projections', name: 'Projections.docx', type: 'document', size: 89 },
+        ],
+    },
+    {
+        id: 'legal',
+        name: 'Legal Documents',
+        icon: 'safety',
+        isPinned: false,
+        documentCount: 42,
+        ownerId: 'alice',
+        owner: alice,
+        members: [
+            { userId: 'current-user', user: currentUser, role: 'viewer', addedAt: new Date('2024-09-01') },
+        ],
+    },
+    {
+        id: 'marketing',
+        name: 'Marketing Analytics',
+        icon: 'line-chart',
+        isPinned: false,
+        documentCount: 28,
+        ownerId: 'current-user',
+        owner: currentUser,
+        members: [
+            { userId: 'carol', user: carol, role: 'admin', addedAt: new Date('2024-08-01') },
+            { userId: 'bob', user: bob, role: 'editor', addedAt: new Date('2024-08-15') },
+        ],
+    },
+    { id: 'client-portfolios', name: 'Client Portfolios', icon: 'wallet', isPinned: false, documentCount: 156, ownerId: 'current-user', owner: currentUser },
+    { id: 'compliance', name: 'Compliance Records', icon: 'check-circle', isPinned: false, documentCount: 89, ownerId: 'current-user', owner: currentUser },
+    { id: 'hr', name: 'HR Policies', icon: 'team', isPinned: false, documentCount: 34, ownerId: 'alice', owner: alice, members: [{ userId: 'bob', user: bob, role: 'admin', addedAt: new Date() }] },
+    { id: 'finance', name: 'Financial Statements', icon: 'dollar', isPinned: false, documentCount: 67, ownerId: 'current-user', owner: currentUser },
+    {
+        id: 'engineering',
+        name: 'Engineering Team',
+        icon: 'code',
+        isPinned: false,
+        documentCount: 120,
+        ownerId: 'bob',
+        owner: bob,
+        members: [
+            { userId: 'alice', user: alice, role: 'editor', addedAt: new Date() },
+            { userId: 'carol', user: carol, role: 'viewer', addedAt: new Date() }
+        ]
+    },
+    { id: 'audit', name: 'Audit Trail', icon: 'audit', isPinned: false, documentCount: 203, ownerId: 'bob', owner: bob },
+    { id: 'contracts', name: 'Contracts', icon: 'file-text', isPinned: false, documentCount: 78, ownerId: 'current-user', owner: currentUser },
 ];
 
 const mockAgents: Agent[] = [
@@ -160,6 +248,14 @@ interface ChatContextType {
     toggleSpacePin: (spaceId: string) => void;
     spaceSearch: string;
     setSpaceSearch: (search: string) => void;
+
+    // Space Management
+    addSpaceMember: (spaceId: string, userId: string, role: MemberRole) => void;
+    removeSpaceMember: (spaceId: string, userId: string) => void;
+    updateMemberRole: (spaceId: string, userId: string, newRole: MemberRole) => void;
+    addDocumentToSpace: (spaceId: string, document: SpaceItem, parentId?: string) => void;
+    removeDocumentFromSpace: (spaceId: string, documentId: string) => void;
+    updateSpace: (spaceId: string, updates: Partial<Space>) => void;
 
     // Agents
     agents: Agent[];
@@ -261,6 +357,125 @@ export function ChatProvider({ children }: ChatProviderProps) {
         );
     };
 
+    // Space Management Functions
+    const addSpaceMember = (spaceId: string, userId: string, role: MemberRole) => {
+        const user = mockUsers.find(u => u.id === userId);
+        if (!user) return;
+
+        setSpaces((prev) =>
+            prev.map((space) => {
+                if (space.id !== spaceId) return space;
+                const newMember: SpaceMember = {
+                    userId,
+                    user,
+                    role,
+                    addedAt: new Date(),
+                };
+                return {
+                    ...space,
+                    members: [...(space.members || []), newMember],
+                };
+            })
+        );
+    };
+
+    const removeSpaceMember = (spaceId: string, userId: string) => {
+        setSpaces((prev) =>
+            prev.map((space) => {
+                if (space.id !== spaceId) return space;
+                return {
+                    ...space,
+                    members: (space.members || []).filter(m => m.userId !== userId),
+                };
+            })
+        );
+    };
+
+    const updateMemberRole = (spaceId: string, userId: string, newRole: MemberRole) => {
+        setSpaces((prev) =>
+            prev.map((space) => {
+                if (space.id !== spaceId) return space;
+                return {
+                    ...space,
+                    members: (space.members || []).map(m =>
+                        m.userId === userId ? { ...m, role: newRole } : m
+                    ),
+                };
+            })
+        );
+    };
+
+    const addDocumentToSpace = (spaceId: string, document: SpaceItem, parentId?: string) => {
+        setSpaces((prev) =>
+            prev.map((space) => {
+                if (space.id !== spaceId) return space;
+
+                if (!parentId) {
+                    // Add to root
+                    return {
+                        ...space,
+                        children: [...(space.children || []), document],
+                        documentCount: document.type === 'document' ? space.documentCount + 1 : space.documentCount,
+                    };
+                }
+
+                // Add to subfolder
+                const addToFolder = (items: SpaceItem[]): SpaceItem[] => {
+                    return items.map(item => {
+                        if (item.id === parentId && item.type === 'folder') {
+                            return {
+                                ...item,
+                                children: [...(item.children || []), document],
+                            };
+                        }
+                        if (item.children) {
+                            return {
+                                ...item,
+                                children: addToFolder(item.children),
+                            };
+                        }
+                        return item;
+                    });
+                };
+
+                return {
+                    ...space,
+                    children: space.children ? addToFolder(space.children) : undefined,
+                    documentCount: document.type === 'document' ? space.documentCount + 1 : space.documentCount,
+                };
+            })
+        );
+    };
+
+    const removeDocumentFromSpace = (spaceId: string, documentId: string) => {
+        setSpaces((prev) =>
+            prev.map((space) => {
+                if (space.id !== spaceId) return space;
+                const removeDoc = (items: SpaceItem[]): SpaceItem[] => {
+                    return items
+                        .filter(item => item.id !== documentId)
+                        .map(item => ({
+                            ...item,
+                            children: item.children ? removeDoc(item.children) : undefined,
+                        }));
+                };
+                return {
+                    ...space,
+                    children: space.children ? removeDoc(space.children) : undefined,
+                    documentCount: Math.max(0, space.documentCount - 1),
+                };
+            })
+        );
+    };
+
+    const updateSpace = (spaceId: string, updates: Partial<Space>) => {
+        setSpaces((prev) =>
+            prev.map((space) =>
+                space.id === spaceId ? { ...space, ...updates } : space
+            )
+        );
+    };
+
     return (
         <ChatContext.Provider
             value={{
@@ -270,6 +485,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 toggleSpacePin,
                 spaceSearch,
                 setSpaceSearch,
+                // Space Management
+                addSpaceMember,
+                removeSpaceMember,
+                updateMemberRole,
+                addDocumentToSpace,
+                removeDocumentFromSpace,
+                updateSpace,
+                // Agents
                 agents,
                 toggleAgent,
                 toggleAgentFavorite,

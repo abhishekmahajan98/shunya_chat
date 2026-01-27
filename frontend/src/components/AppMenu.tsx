@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, Input } from 'antd';
+import { Button, Input, Dropdown, message, Popconfirm } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   PlusOutlined,
   SunOutlined,
@@ -14,10 +15,19 @@ import {
   RightOutlined,
   DownOutlined,
   CheckOutlined,
+  MoreOutlined,
+  TeamOutlined,
+  FolderAddOutlined,
+  EditOutlined,
+  UserAddOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useChat, type Space, type SpaceItem } from '../context/ChatContext';
+import SpaceIcon from './SpaceIcon';
+import AddMembersModal from './AddMembersModal';
+import ManageDocumentsModal from './ManageDocumentsModal';
+import IconPickerModal from './IconPickerModal';
 
 interface AppMenuProps {
   collapsed: boolean;
@@ -133,10 +143,26 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     toggleSpacePin,
     spaceSearch,
     setSpaceSearch,
+    updateSpace,
   } = useChat();
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['folder-work', 'folder-research']));
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set(['personal']));
+  const [membersModalSpace, setMembersModalSpace] = useState<Space | null>(null);
+  const [documentsModalSpace, setDocumentsModalSpace] = useState<Space | null>(null);
+  const [iconPickerSpace, setIconPickerSpace] = useState<Space | null>(null);
+
+  const openMembersModal = (space: Space) => {
+    setMembersModalSpace(space);
+  };
+
+  const openDocumentsModal = (space: Space) => {
+    setDocumentsModalSpace(space);
+  };
+
+  const handleIconChange = (space: Space, newIcon: string) => {
+    updateSpace(space.id, { icon: newIcon });
+  };
 
   const toggleFolderExpand = (id: string) => {
     setExpandedFolders((prev) => {
@@ -181,7 +207,22 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
   );
 
   const pinnedSpaces = filteredSpaces.filter((s) => s.isPinned);
-  const allSpaces = filteredSpaces.filter((s) => !s.isPinned);
+  const unpinnedSpaces = filteredSpaces.filter((s) => !s.isPinned);
+  const mySpaces = unpinnedSpaces.filter((s) => s.ownerId === 'current-user' || s.isPersonal);
+  const joinedSpaces = unpinnedSpaces.filter((s) =>
+    s.ownerId !== 'current-user' &&
+    !s.isPersonal &&
+    s.members?.some(m => m.userId === 'current-user')
+  );
+  const discoverableSpaces = unpinnedSpaces.filter((s) =>
+    s.ownerId !== 'current-user' &&
+    !s.isPersonal &&
+    !s.members?.some(m => m.userId === 'current-user')
+  );
+
+  const handleRequestJoin = (space: Space) => {
+    message.success(`Request sent to join ${space.name}`);
+  };
 
   const renderSpaceItem = (space: Space) => {
     const isSelected = selectedScope?.spaceId === space.id;
@@ -219,7 +260,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
               {isExpanded ? <DownOutlined /> : <RightOutlined />}
             </span>
           )}
-          <span style={{ fontSize: 16 }}>{space.icon}</span>
+          <SpaceIcon icon={space.icon} style={{ fontSize: 16, color: 'var(--color-primary)' }} />
           <span style={{
             flex: 1,
             fontSize: 14,
@@ -227,18 +268,62 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
           }}>
             {space.name}
           </span>
-          <span style={{
-            fontSize: 11,
-            color: 'var(--color-text-tertiary)',
-            background: 'var(--color-surface-hover)',
-            padding: '2px 6px',
-            borderRadius: 4,
-          }}>
-            {space.documentCount}
-          </span>
+
+          {/* 3-dot menu for non-personal spaces */}
+          {!space.isPersonal && (
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'members',
+                    icon: <TeamOutlined />,
+                    label: 'Add Members',
+                    onClick: () => openMembersModal(space),
+                  },
+                  {
+                    key: 'documents',
+                    icon: <FolderAddOutlined />,
+                    label: 'Manage Documents',
+                    onClick: () => openDocumentsModal(space),
+                  },
+                  ...(space.ownerId === 'current-user' ? [
+                    { type: 'divider' as const },
+                    {
+                      key: 'change-icon',
+                      icon: <EditOutlined />,
+                      label: 'Change Icon',
+                      onClick: () => setIconPickerSpace(space),
+                    },
+                  ] : []),
+                ] as MenuProps['items'],
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  cursor: 'pointer',
+                  color: 'var(--color-text-tertiary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '2px',
+                  borderRadius: 4,
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
+                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
+              >
+                <MoreOutlined style={{ fontSize: 14 }} />
+              </div>
+            </Dropdown>
+          )}
+
           <div
             onClick={(e) => {
               e.stopPropagation();
@@ -358,7 +443,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
           </>
         )}
 
-        {!collapsed && allSpaces.length > 0 && (
+        {!collapsed && mySpaces.length > 0 && (
           <>
             <div style={{
               fontSize: 11,
@@ -368,9 +453,82 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
               letterSpacing: '0.5px',
               padding: '12px 4px 8px',
             }}>
-              All Spaces ({allSpaces.length})
+              Owned Spaces ({mySpaces.length})
             </div>
-            {allSpaces.map(renderSpaceItem)}
+            {mySpaces.map(renderSpaceItem)}
+          </>
+        )}
+
+        {!collapsed && joinedSpaces.length > 0 && (
+          <>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--color-text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              padding: '12px 4px 8px',
+            }}>
+              Joined Spaces ({joinedSpaces.length})
+            </div>
+            {joinedSpaces.map(renderSpaceItem)}
+          </>
+        )}
+
+        {!collapsed && discoverableSpaces.length > 0 && (
+          <>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--color-text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              padding: '12px 4px 8px',
+            }}>
+              Discover Spaces ({discoverableSpaces.length})
+            </div>
+            {discoverableSpaces.map(space => (
+              <div key={space.id} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 10px',
+                borderRadius: 8,
+                cursor: 'default', // Not clickable for navigation
+                background: 'transparent',
+                marginLeft: -2,
+                opacity: 0.8,
+              }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-sidebar-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <SpaceIcon icon={space.icon} style={{ fontSize: 16, color: 'var(--color-text-tertiary)' }} />
+                <span style={{
+                  flex: 1,
+                  fontSize: 14,
+                  color: 'var(--color-text-secondary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {space.name}
+                </span>
+                <Popconfirm
+                  title={`Request to join ${space.name}?`}
+                  onConfirm={() => handleRequestJoin(space)}
+                  okText="Request"
+                  cancelText="Cancel"
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<UserAddOutlined />}
+                    title="Request to Join"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  />
+                </Popconfirm>
+              </div>
+            ))}
           </>
         )}
 
@@ -456,6 +614,28 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
           </div>
         )}
       </div>
+
+      {/* Members Modal */}
+      <AddMembersModal
+        spaceId={membersModalSpace?.id || null}
+        open={!!membersModalSpace}
+        onClose={() => setMembersModalSpace(null)}
+      />
+
+      {/* Documents Modal */}
+      <ManageDocumentsModal
+        spaceId={documentsModalSpace?.id || null}
+        open={!!documentsModalSpace}
+        onClose={() => setDocumentsModalSpace(null)}
+      />
+
+      {/* Icon Picker Modal */}
+      <IconPickerModal
+        open={!!iconPickerSpace}
+        onClose={() => setIconPickerSpace(null)}
+        onSelect={(icon) => iconPickerSpace && handleIconChange(iconPickerSpace, icon)}
+        currentIcon={iconPickerSpace?.icon}
+      />
     </div>
   );
 };
