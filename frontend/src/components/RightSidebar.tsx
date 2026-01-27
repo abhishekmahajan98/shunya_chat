@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Typography, Switch, Input, Badge } from 'antd';
+import { Typography, Switch, Input } from 'antd';
 import {
   SearchOutlined,
   StarOutlined,
@@ -441,31 +441,38 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
             // Collapsed Header: My Agents
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Typography.Text strong style={{ fontSize: 16, color: 'var(--color-text)' }}>
-                    My Agents
-                  </Typography.Text>
-                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                    Your active squad
-                  </span>
+                <Typography.Text strong style={{ fontSize: 16, color: 'var(--color-text)' }}>
+                  My Agents
+                </Typography.Text>
+                <div style={{
+                  background: 'var(--color-surface-hover)',
+                  color: 'var(--color-text-secondary)',
+                  padding: '2px 8px',
+                  borderRadius: 12,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: '1px solid var(--color-border)',
+                }}>
+                  {activeAgents.length}
                 </div>
-                <Badge count={activeAgents.length} style={{ backgroundColor: 'var(--color-primary)', boxShadow: 'none' }} />
               </div>
 
               <div
                 onClick={onToggleExpand}
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '6px 10px',
+                  borderRadius: 8,
                   cursor: 'pointer',
                   color: 'var(--color-primary)',
-                  background: 'var(--color-primary-bg-hover)', // subtle tint if defined, else surface
+                  background: 'var(--color-primary-bg-hover)', // subtle tint or surface
                   border: '1px solid var(--color-primary-border)', // subtle border
+                  fontSize: 12,
+                  fontWeight: 600,
                   transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.opacity = '0.8';
@@ -473,9 +480,10 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
                 onMouseLeave={(e) => {
                   e.currentTarget.style.opacity = '1';
                 }}
-                title="Browse Marketplace"
+                title="Browse Agent Marketplace"
               >
-                <AppstoreOutlined style={{ fontSize: 16 }} />
+                <AppstoreOutlined style={{ fontSize: 14 }} />
+                <span>Browse</span>
               </div>
             </>
           )}
