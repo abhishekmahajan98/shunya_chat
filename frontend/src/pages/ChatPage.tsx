@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { MenuProps } from 'antd';
-import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, Badge, List } from 'antd';
+import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, List } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -16,7 +16,7 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat, type Message } from '../context/ChatContext';
+import { useChat } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
@@ -98,7 +98,6 @@ const ChatPage = () => {
     // Check for active agents
     const dexterActive = activeAgents.find(a => a.id === 'dexter');
     const quickSearchActive = activeAgents.find(a => a.id === 'quick-search');
-    const taskManagerActive = activeAgents.find(a => a.id === 'task-manager');
 
     // 1. Dexter (Background Task)
     if (dexterActive) {
