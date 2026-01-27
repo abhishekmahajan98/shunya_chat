@@ -1,4 +1,3 @@
-import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import ChatPage from './pages/ChatPage';
 import SpacesPage from './pages/SpacesPage';
