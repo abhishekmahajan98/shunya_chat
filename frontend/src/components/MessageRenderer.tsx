@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined } from '@ant-design/icons';
+import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import type { Message, Citation, ReasoningStep } from '../context/ChatContext';
 import AIResponse from './AIResponse';
 
@@ -80,6 +80,60 @@ const AgentBadge = ({ agentId }: { agentId: string }) => {
         }}>
             {agentIcons[agentId] || '🤖'}
         </span>
+    );
+};
+
+// Copy Button Component
+const CopyButton = ({ text }: { text: string }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <button
+            onClick={handleCopy}
+            className="copy-btn"
+            style={{
+                background: 'transparent',
+                border: 'none',
+                color: copied ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                cursor: copied ? 'default' : 'pointer',
+                padding: '4px 8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+                opacity: copied ? 1 : 0.6,
+                borderRadius: 4,
+            }}
+            onMouseEnter={(e) => {
+                if (!copied) {
+                    e.currentTarget.style.opacity = '1';
+                    e.currentTarget.style.color = 'var(--color-primary)';
+                    e.currentTarget.style.background = 'var(--color-surface-hover)';
+                }
+            }}
+            onMouseLeave={(e) => {
+                if (!copied) {
+                    e.currentTarget.style.opacity = '0.6';
+                    e.currentTarget.style.color = 'var(--color-text-secondary)';
+                    e.currentTarget.style.background = 'transparent';
+                }
+            }}
+            title="Copy response"
+        >
+            {copied ? (
+                <span style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                    <CheckOutlined style={{ color: 'var(--color-primary)' }} /> Copied to clipboard
+                </span>
+            ) : (
+                <CopyOutlined />
+            )}
+        </button>
     );
 };
 
@@ -274,14 +328,20 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
                         {/* Main content - with markdown rendering */}
                         <AIResponse content={message.content} />
 
-                        {/* Citations */}
-                        {message.citations && message.citations.length > 0 && (
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-                                {message.citations.map((citation) => (
+                        {/* Citations & Copy Button Footer */}
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-end',
+                            marginTop: (message.citations?.length || 0) > 0 ? 12 : 4
+                        }}>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {message.citations && message.citations.map((citation) => (
                                     <CitationBadge key={citation.id} citation={citation} />
                                 ))}
                             </div>
-                        )}
+                            <CopyButton text={message.content} />
+                        </div>
                     </div>
                 )}
             </div>
@@ -318,12 +378,20 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
                 {/* Message content - use AIResponse for AI, plain text for user */}
                 {isUser ? message.content : <AIResponse content={message.content} />}
 
-                {/* Citations */}
-                {!isUser && message.citations && message.citations.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-                        {message.citations.map((citation) => (
-                            <CitationBadge key={citation.id} citation={citation} />
-                        ))}
+                {/* Citations & Copy Button */}
+                {!isUser && (
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-end',
+                        marginTop: (message.citations?.length || 0) > 0 ? 12 : 4
+                    }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {message.citations && message.citations.map((citation) => (
+                                <CitationBadge key={citation.id} citation={citation} />
+                            ))}
+                        </div>
+                        <CopyButton text={message.content} />
                     </div>
                 )}
             </div>
