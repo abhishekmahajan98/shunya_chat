@@ -323,7 +323,7 @@ const ChatPage = () => {
   );
 
   return (
-    <Layout style={{ height: '100vh', background: 'var(--color-bg)' }}>
+    <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden' }}>
       {/* Left Sidebar */}
       {isTablet ? (
         <Drawer
