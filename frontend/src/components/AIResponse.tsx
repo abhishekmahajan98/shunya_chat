@@ -224,59 +224,24 @@ const TableWrapper = ({ children, compact }: { children: React.ReactNode, compac
             }).join(',');
         }).join('\n');
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        // Add BOM for Excel compatibility
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
+
         link.href = url;
-        link.download = `table_export_${new Date().toISOString().slice(0, 10)}.csv`;
-        link.style.display = 'none';
+        link.setAttribute('download', `table_export_${new Date().toISOString().slice(0, 10)}.csv`);
+
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+
+        // clean up
+        setTimeout(() => URL.revokeObjectURL(url), 100);
     };
 
     return (
-        <div style={{ position: 'relative', margin: compact ? '8px 0' : '16px 0' }}>
-            {/* Export Button */}
-            <div style={{
-                position: 'absolute',
-                top: -30,
-                right: 0,
-                display: 'flex',
-                justifyContent: 'flex-end',
-                marginBottom: 4,
-                zIndex: 10
-            }}>
-                <button
-                    onClick={handleExportCSV}
-                    style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--color-text-secondary)',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '4px 8px',
-                        borderRadius: 4,
-                        transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.color = 'var(--color-primary)';
-                        e.currentTarget.style.background = 'var(--color-surface-hover)';
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.color = 'var(--color-text-secondary)';
-                        e.currentTarget.style.background = 'transparent';
-                    }}
-                    title="Export to CSV"
-                >
-                    <DownloadOutlined /> Export CSV
-                </button>
-            </div>
-
+        <div style={{ margin: compact ? '8px 0' : '16px 0' }}>
             <div style={{ overflowX: 'auto', border: '1px solid var(--color-border)', borderRadius: 8 }}>
                 <table ref={tableRef} style={{
                     width: '100%',
@@ -285,6 +250,43 @@ const TableWrapper = ({ children, compact }: { children: React.ReactNode, compac
                 }}>
                     {children}
                 </table>
+            </div>
+
+            {/* Export Button - Below Table */}
+            <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginTop: 8,
+            }}>
+                <button
+                    onClick={handleExportCSV}
+                    style={{
+                        background: 'transparent',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.color = 'var(--color-primary)';
+                        e.currentTarget.style.borderColor = 'var(--color-primary)';
+                        e.currentTarget.style.background = 'var(--color-surface-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--color-text-secondary)';
+                        e.currentTarget.style.borderColor = 'var(--color-border)';
+                        e.currentTarget.style.background = 'transparent';
+                    }}
+                    title="Export to CSV"
+                >
+                    <DownloadOutlined /> Export CSV
+                </button>
             </div>
         </div>
     );
