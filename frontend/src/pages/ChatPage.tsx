@@ -16,7 +16,7 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat } from '../context/ChatContext';
+import { useChat, type Message } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
@@ -52,7 +52,6 @@ const ChatPage = () => {
 
   const [inputValue, setInputValue] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [leftDrawerVisible, setLeftDrawerVisible] = useState(false);
   const [rightDrawerVisible, setRightDrawerVisible] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -61,12 +60,21 @@ const ChatPage = () => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-
-  const screens = useBreakpoint();
+  const screens = Grid.useBreakpoint();
   const isTablet = !screens.lg;
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom of messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollRef.current) {
+      const scrollContainer = scrollRef.current;
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   }, [messages]);
 
   // Handle clearing specific selected items from scope
@@ -85,6 +93,69 @@ const ChatPage = () => {
       selectedItems: [],
     });
   };
+
+  const handleViewDemo = () => {
+    setIsLoading(true);
+
+    // 1. Rich Text
+    addMessage({ type: 'sync', sender: 'user', content: 'Show me what you can render!' });
+    addMessage({
+      type: 'sync',
+      sender: 'assistant',
+      content: `I'd love to! I support **bold**, *italic*, ~~strikethrough~~, and \`inline code\`.\n\n> **Blockquotes** are great for emphasizing key points.\n> They can even be nested!`
+    });
+
+    // 2. Code
+    addMessage({ type: 'sync', sender: 'user', content: 'Can you handle code snippets?' });
+    addMessage({
+      type: 'sync',
+      sender: 'assistant',
+      content: `Absolutely. Here's some **Python** with syntax highlighting:\n\n\`\`\`python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nprint(fibonacci(10))\n\`\`\``
+    });
+
+    // 3. Math
+    addMessage({ type: 'sync', sender: 'user', content: 'What about math equations?' });
+    addMessage({
+      type: 'sync',
+      sender: 'assistant',
+      content: `I speak $\LaTeX$ fluently!\n\n**Inline:** The energy-mass equivalence is $E=mc^2$.\n\n**Block:**\n$$\nf(x) = \\int_{-\\infty}^{\\infty} \\hat f(\\xi)\\,e^{2\\pi i \\xi x} \\,d\\xi\n$$`
+    });
+
+    // 4. Tables
+    addMessage({ type: 'sync', sender: 'user', content: 'Can you make tables I can export?' });
+    addMessage({
+      type: 'sync',
+      sender: 'assistant',
+      content: `Yes! Tables come with a **CSV Export** button automatically.\n\n| ID | Name | Role | Status |\n|----|------|------|--------|\n| 001 | Alice | Admin | Active |\n| 002 | Bob | User | Offline |`
+    });
+
+    // 5. Diagrams
+    addMessage({ type: 'sync', sender: 'user', content: 'Do you do diagrams?' });
+    addMessage({
+      type: 'sync',
+      sender: 'assistant',
+      content: `I can generate dynamic diagrams using Mermaid.\n\n\`\`\`mermaid\ngraph LR\n    A[Start] --> B{success?}\n    B -- Yes --> C[Great!]\n    B -- No --> D[Retry]\n    D --> B\n\`\`\``
+    });
+
+    // 6. Thinking
+    addMessage({ type: 'sync', sender: 'user', content: 'And your reasoning process?' });
+    addMessage({
+      type: 'reasoning',
+      sender: 'assistant',
+      content: 'I can show my internal thought process like this, collapsible above the message.',
+      reasoning: {
+        steps: [
+          { id: '1', text: 'Analyzing user request for capabilities demonstration...', status: 'complete' },
+          { id: '2', text: 'Generating comprehensive showcase including markdown, math, code, and diagrams.', status: 'complete' },
+          { id: '3', text: 'Verifying rendering pipeline for all components.', status: 'complete' }
+        ],
+        isExpanded: true
+      }
+    });
+
+    setIsLoading(false);
+  };
+
 
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -405,47 +476,108 @@ const ChatPage = () => {
               </p>
               <div style={{
                 display: 'flex',
+                flexDirection: 'column',
                 gap: 12,
-                flexWrap: 'wrap',
                 justifyContent: 'center',
+                width: '100%',
+                maxWidth: 420
               }}>
-                {['🔍 deep search competitor X', '📊 analyze Q4 budget', '📧 email weekly summary'].map((action, i) => (
+                {/* View Demo Button - Primary Call to Action */}
+                <button
+                  onClick={handleViewDemo}
+                  style={{
+                    padding: '12px 20px',
+                    borderRadius: 12,
+                    border: '1px solid var(--color-primary)',
+                    background: 'var(--color-surface)',
+                    color: 'var(--color-primary)',
+                    fontSize: 15,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    marginBottom: 16,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>🎨</span> See Capabilities Demo
+                </button>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  margin: '8px 0',
+                  color: 'var(--color-text-tertiary)',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5
+                }}>
+                  <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }}></div>
+                  <span>Or try an example</span>
+                  <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }}></div>
+                </div>
+
+                {['🔍 Deep search competitor X', '📊 Analyze Q4 budget report', '📧 Draft weekly summary email', '💻 Debug Python script'].map((action, i) => (
                   <button
                     key={i}
                     onClick={() => setInputValue(action.split(' ').slice(1).join(' '))}
                     style={{
-                      padding: '10px 16px',
-                      borderRadius: 8,
+                      padding: '12px 16px',
+                      borderRadius: 12,
                       border: '1px solid var(--color-border)',
-                      background: 'transparent',
+                      background: 'var(--color-surface)',
                       color: 'var(--color-text)',
                       fontSize: 14,
                       cursor: 'pointer',
                       transition: 'all 0.2s ease',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = 'var(--color-primary)';
                       e.currentTarget.style.color = 'var(--color-primary)';
+                      e.currentTarget.style.background = 'var(--color-surface-hover)';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.borderColor = 'var(--color-border)';
                       e.currentTarget.style.color = 'var(--color-text)';
+                      e.currentTarget.style.background = 'var(--color-surface)';
                     }}
                   >
-                    {action}
+                    <span style={{ fontSize: 16 }}>{action.split(' ')[0]}</span>
+                    <span>{action.split(' ').slice(1).join(' ')}</span>
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <div style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '24px 20px',
-              display: 'flex',
-              flexDirection: 'column',
-            }}>
-              <div style={{ maxWidth: 800, width: '100%', margin: '0 auto' }}>
+            <div
+              ref={scrollRef}
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '24px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                scrollBehavior: 'smooth'
+              }}
+            >
+              <div style={{ maxWidth: 800, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
                 {messages.map((msg) => (
                   <MessageRenderer key={msg.id} message={msg} />
                 ))}
@@ -584,55 +716,57 @@ const ChatPage = () => {
       </Layout>
 
       {/* Right Sidebar - Agent Marketplace */}
-      {isTablet ? (
-        <Drawer
-          title="Agents"
-          placement="right"
-          closable
-          onClose={() => setRightDrawerVisible(false)}
-          open={rightDrawerVisible}
-          styles={{
-            wrapper: { width: 280 },
-            body: { padding: 0, background: 'var(--color-sidebar)' },
-            header: { background: 'var(--color-sidebar)', borderBottom: '1px solid var(--color-border)' },
-          }}
-        >
-          <RightSidebar isTablet={true} />
-        </Drawer>
-      ) : rightExpanded ? (
-        <div style={{
-          ...rightSiderStyle,
-          flex: 1,
-          width: 'auto',
-          minWidth: 0,
-          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
-          <RightSidebar
-            isTablet={false}
-            expanded={rightExpanded}
-            onToggleExpand={() => setRightExpanded(!rightExpanded)}
-          />
-        </div>
-      ) : (
-        <Sider
-          width={280}
-          style={{
+      {
+        isTablet ? (
+          <Drawer
+            title="Agents"
+            placement="right"
+            closable
+            onClose={() => setRightDrawerVisible(false)}
+            open={rightDrawerVisible}
+            styles={{
+              wrapper: { width: 280 },
+              body: { padding: 0, background: 'var(--color-sidebar)' },
+              header: { background: 'var(--color-sidebar)', borderBottom: '1px solid var(--color-border)' },
+            }}
+          >
+            <RightSidebar isTablet={true} />
+          </Drawer>
+        ) : rightExpanded ? (
+          <div style={{
             ...rightSiderStyle,
+            flex: 1,
+            width: 'auto',
+            minWidth: 0,
             transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-          trigger={null}
-        >
-          <RightSidebar
-            isTablet={false}
-            expanded={rightExpanded}
-            onToggleExpand={() => setRightExpanded(!rightExpanded)}
-          />
-        </Sider>
-      )}
-    </Layout>
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            <RightSidebar
+              isTablet={false}
+              expanded={rightExpanded}
+              onToggleExpand={() => setRightExpanded(!rightExpanded)}
+            />
+          </div>
+        ) : (
+          <Sider
+            width={280}
+            style={{
+              ...rightSiderStyle,
+              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            trigger={null}
+          >
+            <RightSidebar
+              isTablet={false}
+              expanded={rightExpanded}
+              onToggleExpand={() => setRightExpanded(!rightExpanded)}
+            />
+          </Sider>
+        )
+      }
+    </Layout >
   );
 };
 
