@@ -408,6 +408,7 @@ const ChatPage = () => {
           flexDirection: 'column',
           background: 'var(--color-bg)',
           overflow: 'hidden',
+          flex: 1,
         }}>
           {/** Active Background Tasks Indicator **/}
           {backgroundTasks.some(t => t.status === 'running') && (
