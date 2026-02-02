@@ -110,8 +110,7 @@ const ChatPage = () => {
       sender: 'assistant',
       content: '',
       reasoning: isThinkingModel ? {
-        steps: [{ id: '1', text: 'Thinking...', status: 'running' }],
-        isExpanded: true,
+        steps: [{ id: '1', text: '', status: 'running' }],
       } : undefined,
     });
 
@@ -131,7 +130,6 @@ const ChatPage = () => {
             updateMessage(assistantMsgId, {
               reasoning: {
                 steps: [{ id: '1', text: thinkingContent, status: 'running' }],
-                isExpanded: true,
               },
             });
           } else if (chunk.type === 'text') {
@@ -141,16 +139,14 @@ const ChatPage = () => {
               content: textContent,
               reasoning: thinkingContent ? {
                 steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
-                isExpanded: true, // Keep expanded so user can see thinking
               } : undefined,
             });
           } else if (chunk.type === 'done') {
             updateMessage(assistantMsgId, {
-              type: thinkingContent ? 'reasoning' : 'sync', // Keep as reasoning if there was thinking
+              type: thinkingContent ? 'reasoning' : 'sync',
               content: textContent,
               reasoning: thinkingContent ? {
                 steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
-                isExpanded: true, // Keep expanded after completion
               } : undefined,
             });
           } else if (chunk.type === 'error') {

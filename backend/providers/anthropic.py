@@ -14,7 +14,10 @@ class AnthropicProvider(LLMProvider):
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-        self.client = anthropic.Anthropic(api_key=api_key)
+        # Use ASYNC client for true real-time streaming
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+        # Keep sync client for non-streaming calls
+        self.sync_client = anthropic.Anthropic(api_key=api_key)
 
     async def generate(self, messages: list[dict], model_id: str) -> str:
         """Generate response using Claude."""
@@ -22,14 +25,14 @@ class AnthropicProvider(LLMProvider):
         base_model = model_id.replace("-thinking", "") if is_thinking else model_id
 
         if is_thinking:
-            response = self.client.messages.create(
+            response = self.sync_client.messages.create(
                 model=base_model,
                 max_tokens=16000,
                 thinking={"type": "enabled", "budget_tokens": 10000},
                 messages=messages
             )
         else:
-            response = self.client.messages.create(
+            response = self.sync_client.messages.create(
                 model=base_model,
                 max_tokens=8192,
                 messages=messages
@@ -45,34 +48,31 @@ class AnthropicProvider(LLMProvider):
     async def generate_stream(
         self, messages: list[dict], model_id: str
     ) -> AsyncGenerator[dict, None]:
-        """Stream response using Claude with real-time thinking support."""
+        """Stream response using Claude with REAL-TIME thinking support."""
         is_thinking = model_id.endswith("-thinking")
         base_model = model_id.replace("-thinking", "") if is_thinking else model_id
 
         if is_thinking:
-            # Use raw events for real-time thinking streaming
-            with self.client.messages.stream(
+            # Use ASYNC streaming for real-time events
+            async with self.client.messages.stream(
                 model=base_model,
                 max_tokens=16000,
                 thinking={"type": "enabled", "budget_tokens": 10000},
                 messages=messages
             ) as stream:
-                # Iterate over raw events for real-time updates
-                for event in stream:
-                    if hasattr(event, 'type'):
-                        if event.type == "content_block_delta":
-                            delta = event.delta
-                            if hasattr(delta, 'type'):
-                                if delta.type == "thinking_delta":
-                                    yield {"type": "thinking", "content": delta.thinking}
-                                elif delta.type == "text_delta":
-                                    yield {"type": "text", "content": delta.text}
+                # Async iteration yields events in real-time as they arrive
+                async for event in stream:
+                    if event.type == "content_block_delta":
+                        if event.delta.type == "thinking_delta":
+                            yield {"type": "thinking", "content": event.delta.thinking}
+                        elif event.delta.type == "text_delta":
+                            yield {"type": "text", "content": event.delta.text}
         else:
-            # Standard streaming using text_stream iterator
-            with self.client.messages.stream(
+            # Standard async streaming without thinking
+            async with self.client.messages.stream(
                 model=base_model,
                 max_tokens=8192,
                 messages=messages
             ) as stream:
-                for text in stream.text_stream:
+                async for text in stream.text_stream:
                     yield {"type": "text", "content": text}

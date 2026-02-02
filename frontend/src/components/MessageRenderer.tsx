@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
+import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined } from '@ant-design/icons';
 import type { Message, Citation, ReasoningStep } from '../context/ChatContext';
+import AIResponse from './AIResponse';
 
 interface MessageRendererProps {
     message: Message;
@@ -34,23 +35,6 @@ const CitationBadge = ({ citation }: { citation: Citation }) => (
         {citation.title}
         {citation.page && <span style={{ opacity: 0.7 }}> p.{citation.page}</span>}
     </span>
-);
-
-// Reasoning Step Component
-const ReasoningStepItem = ({ step }: { step: ReasoningStep }) => (
-    <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '6px 0',
-        fontSize: 13,
-        color: 'var(--color-text-secondary)',
-    }}>
-        {step.status === 'complete' && <CheckCircleFilled style={{ color: 'var(--color-primary)', fontSize: 12 }} />}
-        {step.status === 'running' && <LoadingOutlined style={{ color: 'var(--color-primary)', fontSize: 12 }} />}
-        {step.status === 'pending' && <span style={{ width: 12, height: 12, borderRadius: '50%', border: '1px solid var(--color-border)' }} />}
-        <span style={{ opacity: step.status === 'pending' ? 0.5 : 1 }}>{step.text}</span>
-    </div>
 );
 
 // Progress Bar Component
@@ -99,9 +83,99 @@ const AgentBadge = ({ agentId }: { agentId: string }) => {
     );
 };
 
+// Thinking Display Component - Minimal, above the bubble
+const ThinkingDisplay = ({
+    steps,
+    isExpanded,
+    onToggle,
+    isThinking
+}: {
+    steps: ReasoningStep[];
+    isExpanded: boolean;
+    onToggle: () => void;
+    isThinking: boolean;
+}) => {
+    const thinkingText = steps[0]?.text || '';
+
+    return (
+        <div style={{ marginBottom: 8 }}>
+            {/* Expand/Collapse Toggle */}
+            <button
+                onClick={onToggle}
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'none',
+                    border: 'none',
+                    padding: '4px 0',
+                    cursor: 'pointer',
+                    color: 'var(--color-text-secondary)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                }}
+            >
+                {isThinking ? (
+                    <LoadingOutlined style={{ fontSize: 12, color: 'var(--color-primary)' }} />
+                ) : (
+                    <BulbOutlined style={{ fontSize: 12, color: 'var(--color-primary)' }} />
+                )}
+                <span style={{ color: 'var(--color-primary)' }}>
+                    {isThinking ? 'Thinking...' : 'Thought process'}
+                </span>
+                {isExpanded ? (
+                    <UpOutlined style={{ fontSize: 10, opacity: 0.6 }} />
+                ) : (
+                    <DownOutlined style={{ fontSize: 10, opacity: 0.6 }} />
+                )}
+            </button>
+
+            {/* Thinking Content - No visible container, just subtle text */}
+            {isExpanded && thinkingText && (
+                <div
+                    style={{
+                        paddingLeft: 20,
+                        marginTop: 4,
+                        maxHeight: isThinking ? 'none' : 400,
+                        overflowY: isThinking ? 'visible' : 'auto',
+                        color: 'var(--color-text-secondary)',
+                    }}
+                >
+                    <AIResponse content={thinkingText} compact={true} />
+                </div>
+            )}
+        </div>
+    );
+};
+
 const MessageRenderer = ({ message }: MessageRendererProps) => {
-    const [isReasoningExpanded, setIsReasoningExpanded] = useState(false);
     const isUser = message.sender === 'user';
+
+    // Determine if thinking is active (running status)
+    const isThinking = message.reasoning?.steps?.some(s => s.status === 'running') || false;
+
+    // Auto-manage expand state:
+    // - Expand when thinking is happening
+    // - Collapse when text starts coming in (thinking done)
+    const [isReasoningExpanded, setIsReasoningExpanded] = useState(
+        message.reasoning?.isExpanded ?? isThinking
+    );
+
+    // Auto-collapse when thinking completes and text arrives
+    useEffect(() => {
+        if (message.reasoning) {
+            const hasContent = Boolean(message.content);
+            const thinkingDone = message.reasoning.steps?.every(s => s.status === 'complete');
+
+            if (isThinking) {
+                // Auto-expand while thinking
+                setIsReasoningExpanded(true);
+            } else if (thinkingDone && hasContent) {
+                // Auto-collapse when results arrive
+                setIsReasoningExpanded(false);
+            }
+        }
+    }, [isThinking, message.content, message.reasoning]);
 
     // Typing indicator
     if (message.pending) {
@@ -161,80 +235,55 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
         );
     }
 
-    // Reasoning Message
+    // Reasoning/Thinking Message - Thinking ABOVE the bubble
     if (message.type === 'reasoning' && message.reasoning) {
         return (
             <div style={{
                 display: 'flex',
-                justifyContent: 'flex-start',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
                 marginBottom: 12,
+                maxWidth: '75%',
             }}>
-                <div style={{
-                    maxWidth: '75%',
-                    padding: '12px 16px',
-                    borderRadius: '16px 16px 16px 4px',
-                    background: 'var(--color-msg-ai)',
-                    color: 'var(--color-msg-ai-text)',
-                }}>
-                    {/* Agent badges */}
-                    {message.agents && message.agents.length > 0 && (
-                        <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                            {message.agents.map((agentId) => (
-                                <AgentBadge key={agentId} agentId={agentId} />
-                            ))}
-                        </div>
-                    )}
+                {/* Thinking display - ABOVE the message bubble, no container */}
+                <ThinkingDisplay
+                    steps={message.reasoning.steps}
+                    isExpanded={isReasoningExpanded}
+                    onToggle={() => setIsReasoningExpanded(!isReasoningExpanded)}
+                    isThinking={isThinking}
+                />
 
-                    {/* Collapsible reasoning */}
-                    <button
-                        onClick={() => setIsReasoningExpanded(!isReasoningExpanded)}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            cursor: 'pointer',
-                            color: 'var(--color-text-secondary)',
-                            fontSize: 13,
-                            marginBottom: isReasoningExpanded ? 8 : 0,
-                        }}
-                    >
-                        {isReasoningExpanded ? <UpOutlined style={{ fontSize: 10 }} /> : <DownOutlined style={{ fontSize: 10 }} />}
-                        {isReasoningExpanded ? 'Hide reasoning' : 'View reasoning'}
-                    </button>
+                {/* Message bubble - only show if there's content */}
+                {message.content && (
+                    <div style={{
+                        padding: '12px 16px',
+                        borderRadius: '16px 16px 16px 4px',
+                        background: 'var(--color-msg-ai)',
+                        color: 'var(--color-msg-ai-text)',
+                        width: '100%',
+                    }}>
+                        {/* Agent badges */}
+                        {message.agents && message.agents.length > 0 && (
+                            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                                {message.agents.map((agentId) => (
+                                    <AgentBadge key={agentId} agentId={agentId} />
+                                ))}
+                            </div>
+                        )}
 
-                    {isReasoningExpanded && (
-                        <div style={{
-                            padding: '8px 12px',
-                            background: 'var(--color-surface)',
-                            borderRadius: 8,
-                            marginBottom: 12,
-                            borderLeft: '2px solid var(--color-primary)',
-                        }}>
-                            {message.reasoning.steps.map((step) => (
-                                <ReasoningStepItem key={step.id} step={step} />
-                            ))}
-                        </div>
-                    )}
+                        {/* Main content - with markdown rendering */}
+                        <AIResponse content={message.content} />
 
-                    {/* Main content */}
-                    {message.content && (
-                        <div style={{ fontSize: 15, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                            {message.content}
-                        </div>
-                    )}
-
-                    {/* Citations */}
-                    {message.citations && message.citations.length > 0 && (
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-                            {message.citations.map((citation) => (
-                                <CitationBadge key={citation.id} citation={citation} />
-                            ))}
-                        </div>
-                    )}
-                </div>
+                        {/* Citations */}
+                        {message.citations && message.citations.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+                                {message.citations.map((citation) => (
+                                    <CitationBadge key={citation.id} citation={citation} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         );
     }
@@ -266,7 +315,8 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
                     </div>
                 )}
 
-                {message.content}
+                {/* Message content - use AIResponse for AI, plain text for user */}
+                {isUser ? message.content : <AIResponse content={message.content} />}
 
                 {/* Citations */}
                 {!isUser && message.citations && message.citations.length > 0 && (

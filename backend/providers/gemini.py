@@ -1,7 +1,11 @@
 import os
 from typing import AsyncGenerator
 from google import genai
-from google.genai import types
+from google.genai.types import (
+    GenerateContentConfig, 
+    ThinkingConfig, 
+    ThinkingLevel
+)
 from dotenv import load_dotenv
 from .base import LLMProvider
 
@@ -9,7 +13,7 @@ load_dotenv()
 
 
 class GeminiProvider(LLMProvider):
-    """Google Gemini API provider with thinking support."""
+    """Google Gemini API provider with Gemini 3 thinking support."""
 
     def __init__(self):
         api_key = os.getenv("GOOGLE_API_KEY")
@@ -21,15 +25,14 @@ class GeminiProvider(LLMProvider):
         """Generate response using Gemini."""
         contents = self._format_messages(messages)
         
-        # Enable thinking for Gemini Pro models
-        config = None
-        if "pro" in model_id.lower():
-            config = types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=10000,
-                    include_thoughts=True  # Include thought summaries
-                )
-            )
+        # Gemini 3 uses thinking_level (LOW/HIGH) + include_thoughts
+        config = GenerateContentConfig(
+            thinking_config=ThinkingConfig(
+                include_thoughts=True,
+                thinking_level=ThinkingLevel.HIGH if "pro" in model_id.lower() else ThinkingLevel.LOW
+            ),
+            response_modalities=["TEXT"]
+        )
         
         response = self.client.models.generate_content(
             model=model_id,
@@ -41,39 +44,38 @@ class GeminiProvider(LLMProvider):
     async def generate_stream(
         self, messages: list[dict], model_id: str
     ) -> AsyncGenerator[dict, None]:
-        """Stream response using Gemini with thinking support."""
+        """Stream response using Gemini 3 with REAL-TIME thinking support."""
         contents = self._format_messages(messages)
         
-        # Enable thinking for Gemini Pro models
-        config = None
-        if "pro" in model_id.lower():
-            config = types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=10000,
-                    include_thoughts=True  # Include thought summaries
-                )
-            )
+        # Configure Gemini 3 Thinking
+        # - include_thoughts=True: MANDATORY to get thoughts in response
+        # - thinking_level: HIGH for deep reasoning (pro), LOW for fast (flash)
+        config = GenerateContentConfig(
+            thinking_config=ThinkingConfig(
+                include_thoughts=True,
+                thinking_level=ThinkingLevel.HIGH if "pro" in model_id.lower() else ThinkingLevel.LOW
+            ),
+            response_modalities=["TEXT"]
+        )
         
-        response = self.client.models.generate_content_stream(
+        # Use async context manager for proper streaming
+        async for chunk in await self.client.aio.models.generate_content_stream(
             model=model_id,
             contents=contents,
             config=config
-        )
-        
-        for chunk in response:
-            # Check for parts in candidates
-            if hasattr(chunk, 'candidates') and chunk.candidates:
-                for candidate in chunk.candidates:
-                    if hasattr(candidate, 'content') and candidate.content:
-                        for part in candidate.content.parts:
-                            # Check if this is a thought part
-                            if hasattr(part, 'thought') and part.thought:
-                                if hasattr(part, 'text') and part.text:
-                                    yield {"type": "thinking", "content": part.text}
-                            elif hasattr(part, 'text') and part.text:
-                                yield {"type": "text", "content": part.text}
-            elif hasattr(chunk, 'text') and chunk.text:
-                yield {"type": "text", "content": chunk.text}
+        ):
+            if not chunk.candidates:
+                continue
+            
+            for part in chunk.candidates[0].content.parts:
+                # 1. Handle Thinking Parts
+                # The SDK explicitly flags these with 'thought=True'
+                if part.thought:
+                    yield {"type": "thinking", "content": part.text}
+                
+                # 2. Handle Final Response Parts
+                elif part.text:
+                    yield {"type": "text", "content": part.text}
 
     def _format_messages(self, messages: list[dict]) -> list[dict]:
         """Convert messages to Gemini format."""

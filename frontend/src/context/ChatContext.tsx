@@ -96,7 +96,7 @@ export interface Message {
     citations?: Citation[];
     reasoning?: {
         steps: ReasoningStep[];
-        isExpanded: boolean;
+        isExpanded?: boolean;
     };
     task?: AsyncTask;
     agents?: string[];

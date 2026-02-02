@@ -59,13 +59,13 @@ AVAILABLE_MODELS: list[ModelInfo] = [
         id="gemini-3-flash-preview",
         name="Gemini 3 Flash",
         provider="google",
-        description="Fast & efficient"
+        description="Fast with thinking"
     ),
     ModelInfo(
         id="gemini-3-pro-preview",
         name="Gemini 3 Pro",
         provider="google",
-        description="Most capable"
+        description="Deep reasoning"
     ),
     ModelInfo(
         id="claude-sonnet-4-5-20250929",
