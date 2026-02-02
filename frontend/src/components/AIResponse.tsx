@@ -8,6 +8,18 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import 'katex/dist/katex.min.css';
 
+import mermaid from 'mermaid';
+import { useEffect, useRef, useId } from 'react';
+
+// Initialize mermaid
+mermaid.initialize({
+    startOnLoad: false,
+    theme: 'dark',
+    securityLevel: 'loose',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    suppressErrorRendering: true,
+});
+
 interface AIResponseProps {
     content: string;
     compact?: boolean;
@@ -104,6 +116,82 @@ const CodeBlock = ({
     );
 };
 
+// Mermaid Diagram Component with Error Boundary and Fallback
+const MermaidBlock = ({ chart }: { chart: string }) => {
+    const id = useId().replace(/:/g, '');
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [svgContent, setSvgContent] = useState<string | null>(null);
+    const [error, setError] = useState<boolean>(false);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const renderChart = async () => {
+            try {
+                // Reset error state when chart changes (retry rendering)
+                setError(false);
+
+                // If chart is empty, do nothing
+                if (!chart.trim()) return;
+
+                const { svg } = await mermaid.render(`mermaid-${id}`, chart);
+
+                if (isMounted) {
+                    setSvgContent(svg);
+                    setError(false);
+                }
+            } catch (err) {
+                // Only log if it's not a parse error (which happens frequently during streaming)
+                // console.debug('Mermaid render parsing...', err);
+                if (isMounted) {
+                    setError(true);
+                }
+            }
+        };
+
+        // Debounce slightly to allow typing to finish
+        const timeout = setTimeout(renderChart, 200);
+        return () => {
+            isMounted = false;
+            clearTimeout(timeout);
+        };
+    }, [chart, id]);
+
+    // Update innerHTML when svgContent changes
+    useEffect(() => {
+        if (containerRef.current && svgContent && !error) {
+            containerRef.current.innerHTML = svgContent;
+        }
+    }, [svgContent, error]);
+
+    if (error) {
+        // Fallback to showing code block if rendering fails (e.g. invalid syntax or streaming)
+        return (
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden', margin: '16px 0' }}>
+                <div style={{ padding: '8px 16px', background: '#2d1a1a', color: '#ff6b6b', fontSize: 12, borderBottom: '1px solid #4a2a2a' }}>
+                    Diagram Preview (Syntax Error)
+                </div>
+                <CodeBlock language="mermaid" value={chart} />
+            </div>
+        );
+    }
+
+    return (
+        <div
+            ref={containerRef}
+            style={{
+                margin: '16px 0',
+                textAlign: 'center',
+                background: '#1a1a1a',
+                padding: 16,
+                borderRadius: 8,
+                overflowX: 'auto',
+                minHeight: 100
+            }}
+        />
+    );
+};
+
 // Inline Code (for `code` in the middle of text)
 const InlineCode = ({ children }: { children: React.ReactNode }) => (
     <code style={{
@@ -137,6 +225,10 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
 
                         // Block code with syntax highlighting
                         if (!isInline) {
+                            if (language === 'mermaid') {
+                                return <MermaidBlock chart={codeString} />;
+                            }
+
                             return (
                                 <CodeBlock
                                     language={language}

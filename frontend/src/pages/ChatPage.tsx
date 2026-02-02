@@ -60,8 +60,7 @@ const ChatPage = () => {
   const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [streamingThinking, setStreamingThinking] = useState('');
-  const [streamingText, setStreamingText] = useState('');
+
 
   const screens = useBreakpoint();
   const isTablet = !screens.lg;
@@ -93,8 +92,7 @@ const ChatPage = () => {
     const userInput = inputValue;
     setInputValue('');
     setIsLoading(true);
-    setStreamingThinking('');
-    setStreamingText('');
+
 
     // Add user message to UI
     addMessage({
@@ -126,7 +124,7 @@ const ChatPage = () => {
             setConversationId(chunk.conversation_id);
           } else if (chunk.type === 'thinking') {
             thinkingContent += chunk.content || '';
-            setStreamingThinking(thinkingContent);
+
             updateMessage(assistantMsgId, {
               reasoning: {
                 steps: [{ id: '1', text: thinkingContent, status: 'running' }],
@@ -134,7 +132,7 @@ const ChatPage = () => {
             });
           } else if (chunk.type === 'text') {
             textContent += chunk.content || '';
-            setStreamingText(textContent);
+
             updateMessage(assistantMsgId, {
               content: textContent,
               reasoning: thinkingContent ? {
@@ -167,8 +165,7 @@ const ChatPage = () => {
       });
     } finally {
       setIsLoading(false);
-      setStreamingThinking('');
-      setStreamingText('');
+
     }
   };
 
@@ -594,8 +591,8 @@ const ChatPage = () => {
           closable
           onClose={() => setRightDrawerVisible(false)}
           open={rightDrawerVisible}
-          width={280}
           styles={{
+            wrapper: { width: 280 },
             body: { padding: 0, background: 'var(--color-sidebar)' },
             header: { background: 'var(--color-sidebar)', borderBottom: '1px solid var(--color-border)' },
           }}
