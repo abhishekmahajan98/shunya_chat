@@ -5,7 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import { CopyOutlined, CheckOutlined, DownloadOutlined } from '@ant-design/icons';
 import 'katex/dist/katex.min.css';
 
 import mermaid from 'mermaid';
@@ -208,14 +208,96 @@ const InlineCode = ({ children }: { children: React.ReactNode }) => (
     </code>
 );
 
+// Table Wrapper with CSV Export
+const TableWrapper = ({ children, compact }: { children: React.ReactNode, compact: boolean }) => {
+    const tableRef = useRef<HTMLTableElement>(null);
+
+    const handleExportCSV = () => {
+        if (!tableRef.current) return;
+
+        const rows = Array.from(tableRef.current.querySelectorAll('tr'));
+        const csvContent = rows.map(row => {
+            const cells = Array.from(row.querySelectorAll('th, td'));
+            return cells.map(cell => {
+                const text = cell.textContent?.replace(/"/g, '""') || '';
+                return `"${text}"`;
+            }).join(',');
+        }).join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'table_export.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    return (
+        <div style={{ position: 'relative', margin: compact ? '8px 0' : '16px 0' }}>
+            {/* Export Button */}
+            <div style={{
+                position: 'absolute',
+                top: -30,
+                right: 0,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginBottom: 4,
+                zIndex: 10
+            }}>
+                <button
+                    onClick={handleExportCSV}
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--color-text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '4px 8px',
+                        borderRadius: 4,
+                        transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.color = 'var(--color-primary)';
+                        e.currentTarget.style.background = 'var(--color-surface-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--color-text-secondary)';
+                        e.currentTarget.style.background = 'transparent';
+                    }}
+                    title="Export to CSV"
+                >
+                    <DownloadOutlined /> Export CSV
+                </button>
+            </div>
+
+            <div style={{ overflowX: 'auto', border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                <table ref={tableRef} style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: compact ? 12 : 14,
+                }}>
+                    {children}
+                </table>
+            </div>
+        </div>
+    );
+};
+
 // Helper to safely extract text from children
 const extractText = (children: React.ReactNode): string => {
     if (typeof children === 'string') return children;
     if (Array.isArray(children)) {
         return children.map(child => extractText(child)).join('');
     }
-    if (typeof children === 'object' && children && 'props' in children) {
-        return extractText((children as React.ReactElement).props.children);
+    const childObj = children as any;
+    if (typeof children === 'object' && children && childObj.props) {
+        return extractText(childObj.props.children);
     }
     return String(children || '');
 };
@@ -383,17 +465,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
 
                     // Tables (GFM)
                     table({ children }) {
-                        return (
-                            <div style={{ overflowX: 'auto', margin: compact ? '8px 0' : '12px 0' }}>
-                                <table style={{
-                                    width: '100%',
-                                    borderCollapse: 'collapse',
-                                    fontSize: compact ? 12 : 14,
-                                }}>
-                                    {children}
-                                </table>
-                            </div>
-                        );
+                        return <TableWrapper compact={compact}>{children}</TableWrapper>;
                     },
                     th({ children }) {
                         return (
