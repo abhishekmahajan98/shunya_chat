@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { MenuProps } from 'antd';
-import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, List } from 'antd';
+import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, List, message as antMessage } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -20,20 +20,22 @@ import { useChat } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
+import { streamMessage, type StreamChunk } from '../api';
 
 const { Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
 
 interface ModelOption {
+  id: string;
   name: string;
   detail: string;
 }
 
 const modelOptions: ModelOption[] = [
-  { name: 'Gemini 2.0 Flash', detail: 'Fast & efficient' },
-  { name: 'Gemini 2.0 Ultra', detail: 'Most capable' },
-  { name: 'GPT-4', detail: 'OpenAI flagship' },
-  { name: 'Claude 3', detail: 'Anthropic AI' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', detail: 'Fast & efficient' },
+  { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', detail: 'Most capable' },
+  { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', detail: 'Balanced performance' },
+  { id: 'claude-sonnet-4-5-20250929-thinking', name: 'Claude Sonnet 4.5 Thinking', detail: 'Extended reasoning' },
 ];
 
 const ChatPage = () => {
@@ -45,8 +47,6 @@ const ChatPage = () => {
     selectedScope,
     setSelectedScope,
     activeAgents,
-    addBackgroundTask,
-    updateBackgroundTask,
     backgroundTasks,
   } = useChat();
 
@@ -58,6 +58,10 @@ const ChatPage = () => {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightExpanded, setRightExpanded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [streamingThinking, setStreamingThinking] = useState('');
+  const [streamingText, setStreamingText] = useState('');
 
   const screens = useBreakpoint();
   const isTablet = !screens.lg;
@@ -83,123 +87,93 @@ const ChatPage = () => {
     });
   };
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
-
-    // Add user message
-    addMessage({
-      type: 'sync',
-      sender: 'user',
-      content: inputValue,
-    });
+  const handleSend = async () => {
+    if (!inputValue.trim() || isLoading) return;
 
     const userInput = inputValue;
     setInputValue('');
+    setIsLoading(true);
+    setStreamingThinking('');
+    setStreamingText('');
 
-    // Check for active agents
-    const dexterActive = activeAgents.find(a => a.id === 'dexter');
-    const quickSearchActive = activeAgents.find(a => a.id === 'quick-search');
+    // Add user message to UI
+    addMessage({
+      type: 'sync',
+      sender: 'user',
+      content: userInput,
+    });
 
-    // 1. Dexter (Background Task)
-    if (dexterActive) {
-      setTimeout(() => {
-        // Add initial response
-        addMessage({
-          type: 'sync',
-          sender: 'assistant',
-          content: `I've started a deep research task for "${userInput}". This might take a while. I'll email you the results when I'm done.`,
-          agents: ['dexter'],
-        });
+    // Create placeholder for assistant response (thinking shown for any model that sends it)
+    const isThinkingModel = selectedModel.id.includes('thinking') || selectedModel.id.includes('pro');
+    const assistantMsgId = addMessage({
+      type: 'reasoning',
+      sender: 'assistant',
+      content: '',
+      reasoning: isThinkingModel ? {
+        steps: [{ id: '1', text: 'Thinking...', status: 'running' }],
+        isExpanded: true,
+      } : undefined,
+    });
 
-        // Start background task
-        const taskId = addBackgroundTask({
-          agentId: 'dexter',
-          agentName: 'Dexter',
-          query: userInput,
-          status: 'running',
-          progress: 0,
-          willEmail: true,
-        });
+    let thinkingContent = '';
+    let textContent = '';
 
-        // Simulate background progress
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 5;
-          if (progress >= 100) {
-            clearInterval(interval);
-            updateBackgroundTask(taskId, { status: 'complete', progress: 100, completedAt: new Date() });
-          } else {
-            updateBackgroundTask(taskId, { progress });
+    try {
+      await streamMessage(
+        selectedModel.id,
+        userInput,
+        (chunk: StreamChunk) => {
+          if (chunk.type === 'meta' && chunk.conversation_id) {
+            setConversationId(chunk.conversation_id);
+          } else if (chunk.type === 'thinking') {
+            thinkingContent += chunk.content || '';
+            setStreamingThinking(thinkingContent);
+            updateMessage(assistantMsgId, {
+              reasoning: {
+                steps: [{ id: '1', text: thinkingContent, status: 'running' }],
+                isExpanded: true,
+              },
+            });
+          } else if (chunk.type === 'text') {
+            textContent += chunk.content || '';
+            setStreamingText(textContent);
+            updateMessage(assistantMsgId, {
+              content: textContent,
+              reasoning: thinkingContent ? {
+                steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
+                isExpanded: true, // Keep expanded so user can see thinking
+              } : undefined,
+            });
+          } else if (chunk.type === 'done') {
+            updateMessage(assistantMsgId, {
+              type: thinkingContent ? 'reasoning' : 'sync', // Keep as reasoning if there was thinking
+              content: textContent,
+              reasoning: thinkingContent ? {
+                steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
+                isExpanded: true, // Keep expanded after completion
+              } : undefined,
+            });
+          } else if (chunk.type === 'error') {
+            updateMessage(assistantMsgId, {
+              type: 'sync',
+              content: `Error: ${chunk.content}`,
+            });
           }
-        }, 1000); // 20 seconds total
-      }, 500);
-      return;
-    }
-
-    // 2. Quick Search (Reasoning)
-    if (quickSearchActive) {
-      const msgId = addMessage({
-        type: 'reasoning',
-        sender: 'assistant',
-        content: '',
-        agents: ['quick-search'],
-        reasoning: {
-          steps: [
-            { id: '1', text: 'Analyzing query intent...', status: 'running' },
-            { id: '2', text: 'Searching knowledge base...', status: 'pending' },
-            { id: '3', text: 'Synthesizing answer...', status: 'pending' },
-          ],
-          isExpanded: true,
         },
-      });
-
-      // Simulate steps
-      setTimeout(() => {
-        updateMessage(msgId, {
-          reasoning: {
-            steps: [
-              { id: '1', text: 'Analyzing query intent...', status: 'complete' },
-              { id: '2', text: 'Searching knowledge base...', status: 'running' },
-              { id: '3', text: 'Synthesizing answer...', status: 'pending' },
-            ],
-            isExpanded: true,
-          }
-        });
-      }, 1500);
-
-      setTimeout(() => {
-        updateMessage(msgId, {
-          content: `Here is what I found regarding "${userInput}". \n\nBased on the quick search, the key points are:\n1. Detailed analysis of the topic.\n2. Cross-referenced data points.\n3. Verified sources.`,
-          reasoning: {
-            steps: [
-              { id: '1', text: 'Analyzing query intent...', status: 'complete' },
-              { id: '2', text: 'Searching knowledge base...', status: 'complete' },
-              { id: '3', text: 'Synthesizing answer...', status: 'complete' },
-            ],
-            isExpanded: false,
-          },
-          citations: [
-            { id: '1', title: 'Market Report 2024' },
-            { id: '2', title: 'Internal Wiki' },
-          ],
-        });
-      }, 3000);
-      return;
-    }
-
-    // 3. Default / Context Aware Response
-    setTimeout(() => {
-      const contextPrefix = selectedScope?.selectedItems.length
-        ? `Using context from ${selectedScope.selectedItems.length} selected items in ${selectedScope.spaceName}: `
-        : `Using context from ${selectedScope?.spaceName || 'Global'}: `;
-
-      addMessage({
+        conversationId || undefined
+      );
+    } catch (error) {
+      console.error('Failed to stream message:', error);
+      antMessage.error(error instanceof Error ? error.message : 'Failed to stream message');
+      updateMessage(assistantMsgId, {
         type: 'sync',
-        sender: 'assistant',
-        content: `${contextPrefix} I've processed your request: "${userInput}". \n\nThis is a sample response demonstrating how I can help you with your tasks in this space.`,
-        agents: activeAgents.map(a => a.id),
+        content: 'Sorry, I encountered an error. Please check your API keys and try again.',
       });
-    }, 1000);
+    } finally {
+      setIsLoading(false);
+      setStreamingThinking('');
+      setStreamingText('');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -210,12 +184,12 @@ const ChatPage = () => {
   };
 
   const handleMenuClick: MenuProps['onClick'] = (e) => {
-    const newModel = modelOptions.find((model) => model.name === e.key);
+    const newModel = modelOptions.find((model) => model.id === e.key);
     if (newModel) setSelectedModel(newModel);
   };
 
   const menuItems: MenuProps['items'] = modelOptions.map((model) => ({
-    key: model.name,
+    key: model.id,
     label: (
       <div style={{ padding: '4px 0' }}>
         <div style={{ fontWeight: 500 }}>{model.name}</div>
@@ -602,10 +576,11 @@ const ChatPage = () => {
                     type="primary"
                     icon={<SendOutlined />}
                     onClick={handleSend}
-                    disabled={!inputValue.trim()}
+                    disabled={!inputValue.trim() || isLoading}
+                    loading={isLoading}
                     style={{
                       borderRadius: 8,
-                      background: inputValue.trim() ? 'var(--color-primary)' : undefined,
+                      background: inputValue.trim() && !isLoading ? 'var(--color-primary)' : undefined,
                     }}
                   />
                 </div>
