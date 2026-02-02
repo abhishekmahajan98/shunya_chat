@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -121,7 +121,7 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
     const id = useId().replace(/:/g, '');
     const containerRef = useRef<HTMLDivElement>(null);
     const [svgContent, setSvgContent] = useState<string | null>(null);
-    const [error, setError] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -129,7 +129,7 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
         const renderChart = async () => {
             try {
                 // Reset error state when chart changes (retry rendering)
-                setError(false);
+                setError(null);
 
                 // If chart is empty, do nothing
                 if (!chart.trim()) return;
@@ -138,13 +138,13 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
 
                 if (isMounted) {
                     setSvgContent(svg);
-                    setError(false);
+                    setError(null);
                 }
             } catch (err) {
                 // Only log if it's not a parse error (which happens frequently during streaming)
-                // console.debug('Mermaid render parsing...', err);
+                console.debug('Mermaid render error:', err);
                 if (isMounted) {
-                    setError(true);
+                    setError(err instanceof Error ? err.message : 'Unknown error');
                 }
             }
         };
@@ -166,10 +166,12 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
 
     if (error) {
         // Fallback to showing code block if rendering fails (e.g. invalid syntax or streaming)
+        // Show error message only if specifically requested or for debugging, 
+        // effectively treating it as a "work in progress" or "raw view"
         return (
             <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden', margin: '16px 0' }}>
-                <div style={{ padding: '8px 16px', background: '#2d1a1a', color: '#ff6b6b', fontSize: 12, borderBottom: '1px solid #4a2a2a' }}>
-                    Diagram Preview (Syntax Error)
+                <div style={{ padding: '8px 16px', background: '#2d1a1a', color: '#ff6b6b', fontSize: 12, borderBottom: '1px solid #4a2a2a', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Diagram Preview (Syntax Error)</span>
                 </div>
                 <CodeBlock language="mermaid" value={chart} />
             </div>
@@ -206,6 +208,18 @@ const InlineCode = ({ children }: { children: React.ReactNode }) => (
     </code>
 );
 
+// Helper to safely extract text from children
+const extractText = (children: React.ReactNode): string => {
+    if (typeof children === 'string') return children;
+    if (Array.isArray(children)) {
+        return children.map(child => extractText(child)).join('');
+    }
+    if (typeof children === 'object' && children && 'props' in children) {
+        return extractText((children as React.ReactElement).props.children);
+    }
+    return String(children || '');
+};
+
 // Main AI Response Component
 const AIResponse = ({ content, compact = false }: AIResponseProps) => {
     return (
@@ -215,10 +229,12 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                 rehypePlugins={[rehypeKatex]}
                 components={{
                     // Code blocks and inline code
-                    code({ node, className, children, ...props }) {
+                    code({ node, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || '');
                         const language = match ? match[1] : '';
-                        const codeString = String(children).replace(/\n$/, '');
+
+                        // Use safe extraction instead of String(children) to avoid commas
+                        const codeString = extractText(children).replace(/\n$/, '');
 
                         // Detect if inline based on whether it has multiple lines or a language
                         const isInline = !match && !codeString.includes('\n');
@@ -429,4 +445,4 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
     );
 };
 
-export default AIResponse;
+export default memo(AIResponse);
