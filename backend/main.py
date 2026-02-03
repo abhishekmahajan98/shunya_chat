@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from routers.chat import router as chat_router
 from routers.agents import router as agents_router
+from routers.auth import router as auth_router
 
 load_dotenv()
 
@@ -28,6 +29,7 @@ app.add_middleware(
 # Register routers
 app.include_router(chat_router)
 app.include_router(agents_router)
+app.include_router(auth_router)
 
 
 @app.get("/health")

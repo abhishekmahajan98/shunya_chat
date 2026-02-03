@@ -436,6 +436,27 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
               >
                 <ShrinkOutlined /> Back to Chat
               </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  color: 'var(--color-primary)',
+                  background: 'var(--color-primary-bg-hover)',
+                  border: '1px solid var(--color-primary-border)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  transition: 'all 0.2s ease',
+                  marginLeft: 8,
+                }}
+                onClick={() => window.location.href = '/register-agent'} // Using href to ensure clean navigation, or use navigate hook if available
+              >
+                + Submit Agent
+              </div>
             </>
           ) : (
             // Collapsed Header: My Agents

@@ -214,10 +214,20 @@ export interface AgentInfo {
 }
 
 /**
+ * Get auth headers for API requests
+ */
+function getAuthHeaders(): Record<string, string> {
+    const token = localStorage.getItem('auth_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+/**
  * Get all available agents from the backend registry.
  */
 export async function getAgents(): Promise<AgentInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/agents`);
+    const response = await fetch(`${API_BASE_URL}/api/agents`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch agents');
     }
@@ -228,7 +238,9 @@ export async function getAgents(): Promise<AgentInfo[]> {
  * Get user's favorite agents.
  */
 export async function getFavoriteAgents(): Promise<AgentInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/agents/favorites`);
+    const response = await fetch(`${API_BASE_URL}/api/agents/favorites`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch favorite agents');
     }
@@ -241,6 +253,7 @@ export async function getFavoriteAgents(): Promise<AgentInfo[]> {
 export async function toggleAgentFavorite(agentId: string): Promise<{ id: string; isFavorite: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/favorite`, {
         method: 'PUT',
+        headers: getAuthHeaders(),
     });
     if (!response.ok) {
         throw new Error('Failed to toggle favorite');
@@ -305,4 +318,34 @@ export async function streamAgentMessage(
             }
         }
     }
+}
+
+export interface RegisterAgentRequest {
+    id: string;
+    name: string;
+    icon: string;
+    description: string;
+    category: AgentCategory;
+    url: string;
+}
+
+/**
+ * Register a new agent.
+ */
+export async function registerAgent(agent: RegisterAgentRequest): Promise<{ id: string; status: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/agents`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify(agent),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(error.detail || 'Failed to register agent');
+    }
+
+    return response.json();
 }

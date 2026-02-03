@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import type { Message, Citation, ReasoningStep } from '../context/ChatContext';
 import AIResponse from './AIResponse';
@@ -240,7 +240,7 @@ const CitationsDisplay = ({ citations }: { citations: Citation[] }) => {
     );
 };
 
-const MessageRenderer = ({ message }: MessageRendererProps) => {
+const MessageRenderer = memo(({ message }: MessageRendererProps) => {
     const isUser = message.sender === 'user';
 
     // Determine if thinking is active (running status)
@@ -434,6 +434,22 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
             </div>
         </div>
     );
-};
+}, (prevProps, nextProps) => {
+    // Custom comparison function for React.memo
+    // Returns true if props are equal (do NOT re-render)
+    const prevMsg = prevProps.message;
+    const nextMsg = nextProps.message;
+
+    return (
+        prevMsg.id === nextMsg.id &&
+        prevMsg.content === nextMsg.content &&
+        prevMsg.type === nextMsg.type &&
+        prevMsg.pending === nextMsg.pending &&
+        JSON.stringify(prevMsg.reasoning) === JSON.stringify(nextMsg.reasoning) &&
+        JSON.stringify(prevMsg.citations) === JSON.stringify(nextMsg.citations) &&
+        JSON.stringify(prevMsg.agents) === JSON.stringify(nextMsg.agents) &&
+        JSON.stringify(prevMsg.task) === JSON.stringify(nextMsg.task)
+    );
+});
 
 export default MessageRenderer;

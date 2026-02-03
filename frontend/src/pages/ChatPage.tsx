@@ -70,12 +70,19 @@ const ChatPage = () => {
   useEffect(() => {
     if (scrollRef.current) {
       const scrollContainer = scrollRef.current;
+
+      // Use 'auto' (instant) scrolling if we are loading or streaming to prevent 
+      // the "chunky" feel of smooth scrolling fighting with rapid updates
+      const behavior = isLoading ? 'auto' : 'smooth';
+
+      // Only scroll if we're near the bottom or it's a new message
+      // A simple heuristic: always scroll for now, but use instant behavior for fluidity
       scrollContainer.scrollTo({
         top: scrollContainer.scrollHeight,
-        behavior: 'smooth'
+        behavior: behavior
       });
     }
-  }, [messages]);
+  }, [messages, isLoading]);
 
   // Handle clearing specific selected items from scope
   const handleRemoveSelectedItem = (id: string) => {
@@ -172,15 +179,13 @@ const ChatPage = () => {
       content: userInput,
     });
 
-    // Create placeholder for assistant response (thinking shown for any model that sends it)
-    const isThinkingModel = selectedModel.id.includes('thinking') || selectedModel.id.includes('pro');
+    // Create placeholder for assistant response with pending state (loader)
+    // We don't assume reasoning yet - we'll upgrade the message type when thinking actually starts
     const assistantMsgId = addMessage({
-      type: 'reasoning',
+      type: 'sync',
       sender: 'assistant',
       content: '',
-      reasoning: isThinkingModel ? {
-        steps: [{ id: '1', text: '', status: 'running' }],
-      } : undefined,
+      pending: true,
     });
 
     let thinkingContent = '';
@@ -200,19 +205,28 @@ const ChatPage = () => {
             const agentName = chunk.name || chunk.agent || '';
             if (!collectedAgents.includes(agentName)) {
               collectedAgents.push(agentName);
+              // We could update agents here, but we keep pending=true until content starts
+              updateMessage(assistantMsgId, {
+                agents: collectedAgents
+              });
             }
           } else if (chunk.type === 'agent_result') {
             // Agent completed - no action needed, name already collected
           } else if (chunk.type === 'thinking') {
             thinkingContent += chunk.content || '';
+            // Transition to reasoning type and clear pending on first thinking chunk
             updateMessage(assistantMsgId, {
+              pending: false, // Stop loader
+              type: 'reasoning',
               reasoning: {
                 steps: [{ id: '1', text: thinkingContent, status: 'running' }],
               },
             });
           } else if (chunk.type === 'text') {
             textContent += chunk.content || '';
+            // Transition to content display and clear pending
             updateMessage(assistantMsgId, {
+              pending: false, // Stop loader
               content: textContent,
               reasoning: thinkingContent ? {
                 steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
@@ -221,6 +235,7 @@ const ChatPage = () => {
           } else if (chunk.type === 'done') {
             // Use local collectedAgents
             updateMessage(assistantMsgId, {
+              pending: false,
               type: thinkingContent ? 'reasoning' : 'sync',
               content: textContent,
               agents: collectedAgents.length > 0 ? collectedAgents : undefined,
@@ -460,6 +475,7 @@ const ChatPage = () => {
               justifyContent: 'center',
               flex: 1,
               padding: '40px 20px',
+              overflowY: 'auto', // Allow scrolling if empty state content is too tall
             }}>
               <div style={{
                 width: 80,
@@ -470,6 +486,7 @@ const ChatPage = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 24,
+                flexShrink: 0,
               }}>
                 <span style={{ fontSize: 40, color: 'var(--color-text-inverse)' }}>⚡</span>
               </div>
@@ -590,10 +607,12 @@ const ChatPage = () => {
                 padding: '24px 20px',
                 display: 'flex',
                 flexDirection: 'column',
-                scrollBehavior: 'smooth'
+                scrollBehavior: 'smooth',
+                height: '0px', // Hack to force flex container to respect parent height
+                minHeight: '0px',
               }}
             >
-              <div style={{ maxWidth: 800, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <div style={{ maxWidth: 800, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 20 }}>
                 {messages.map((msg) => (
                   <MessageRenderer key={msg.id} message={msg} />
                 ))}

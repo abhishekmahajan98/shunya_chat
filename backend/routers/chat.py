@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header, Depends
 from fastapi.responses import StreamingResponse
 import json
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from database import get_supabase
 from models import (
@@ -18,6 +19,24 @@ from models import (
 from providers import GeminiProvider, AnthropicProvider
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+
+def get_optional_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
+    """Get user ID from auth token if provided."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    
+    token = authorization.replace("Bearer ", "")
+    supabase = get_supabase()
+    
+    try:
+        user_response = supabase.auth.get_user(token)
+        if user_response and user_response.user:
+            return user_response.user.id
+    except Exception:
+        pass
+    
+    return None
 
 # Initialize providers lazily
 _gemini_provider = None
@@ -45,7 +64,7 @@ async def list_models():
 
 
 @router.post("/chat", response_model=MessageResponse)
-async def send_message(request: MessageCreate):
+async def send_message(request: MessageCreate, user_id: Optional[str] = Depends(get_optional_user_id)):
     """Send a message and get AI response."""
     supabase = get_supabase()
     
@@ -67,6 +86,7 @@ async def send_message(request: MessageCreate):
             "id": conversation_id,
             "title": "New Chat",
             "model": request.model,
+            "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
         }
@@ -134,7 +154,7 @@ async def send_message(request: MessageCreate):
 
 
 @router.post("/chat/stream")
-async def send_message_stream(request: MessageCreate):
+async def send_message_stream(request: MessageCreate, user_id: Optional[str] = Depends(get_optional_user_id)):
     """Stream a message response using SSE."""
     supabase = get_supabase()
     
@@ -155,6 +175,7 @@ async def send_message_stream(request: MessageCreate):
             "id": conversation_id,
             "title": "New Chat",
             "model": request.model,
+            "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
         }
@@ -232,11 +253,15 @@ async def send_message_stream(request: MessageCreate):
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
-async def list_conversations():
-    """List all conversations."""
+async def list_conversations(user_id: Optional[str] = Depends(get_optional_user_id)):
+    """List all conversations for the authenticated user."""
+    if not user_id:
+        return []
+        
     supabase = get_supabase()
     result = supabase.table("conversations")\
         .select("*")\
+        .eq("user_id", user_id)\
         .order("updated_at", desc=True)\
         .execute()
     
@@ -253,12 +278,15 @@ async def list_conversations():
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
-async def get_conversation(conversation_id: str):
+async def get_conversation(conversation_id: str, user_id: Optional[str] = Depends(get_optional_user_id)):
     """Get a conversation with all messages."""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
     supabase = get_supabase()
     
     # Get conversation
-    conv_result = supabase.table("conversations").select("*").eq("id", conversation_id).execute()
+    conv_result = supabase.table("conversations").select("*").eq("id", conversation_id).eq("user_id", user_id).execute()
     if not conv_result.data:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
@@ -290,12 +318,15 @@ async def get_conversation(conversation_id: str):
 
 
 @router.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(conversation_id: str, user_id: Optional[str] = Depends(get_optional_user_id)):
     """Delete a conversation."""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
     supabase = get_supabase()
     
-    # Check if exists
-    result = supabase.table("conversations").select("id").eq("id", conversation_id).execute()
+    # Check if exists and belongs to user
+    result = supabase.table("conversations").select("id").eq("id", conversation_id).eq("user_id", user_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -308,7 +339,7 @@ async def delete_conversation(conversation_id: str):
 
 
 @router.post("/chat/agent")
-async def send_message_with_agents(request: MessageCreate):
+async def send_message_with_agents(request: MessageCreate, user_id: Optional[str] = Depends(get_optional_user_id)):
     """
     Stream a message response using the LangGraph agent system.
     Agents are automatically activated based on user intent.
@@ -336,6 +367,7 @@ async def send_message_with_agents(request: MessageCreate):
             "id": conversation_id,
             "title": "New Chat",
             "model": request.model,
+            "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
         }

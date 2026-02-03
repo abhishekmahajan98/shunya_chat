@@ -20,9 +20,12 @@ import {
   FolderAddOutlined,
   EditOutlined,
   UserAddOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { useChat, type Space, type SpaceItem } from '../context/ChatContext';
 import SpaceIcon from './SpaceIcon';
 import AddMembersModal from './AddMembersModal';
@@ -135,6 +138,7 @@ const TreeItem = ({ item, level, selectedIds, onToggleSelect, expandedFolders, o
 
 const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const {
     spaces,
@@ -563,6 +567,86 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         flexDirection: 'column',
         gap: 8,
       }}>
+        {/* User Profile */}
+        {user && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            padding: collapsed ? '8px' : '8px 12px',
+            marginBottom: 8,
+            background: 'var(--color-surface-hover)',
+            borderRadius: 8,
+            border: '1px solid var(--color-border)',
+          }}>
+            {collapsed ? (
+              <Dropdown
+                menu={{
+                  items: [
+                    { label: user.email, key: 'email', icon: <UserOutlined />, disabled: true },
+                    { type: 'divider' },
+                    { label: 'Logout', key: 'logout', icon: <LogoutOutlined />, onClick: logout }
+                  ]
+                }}
+                placement="rightBottom"
+              >
+                <div style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center', width: '100%' }}>
+                  <div style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, var(--color-primary) 0%, #D99A20 100%)',
+                    color: '#1A1A1A',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: 12,
+                  }}>
+                    {user.email?.[0].toUpperCase()}
+                  </div>
+                </div>
+              </Dropdown>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+                  <div style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, var(--color-primary) 0%, #D99A20 100%)',
+                    color: '#1A1A1A',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    flexShrink: 0,
+                  }}>
+                    {user.email?.[0].toUpperCase()}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {user.name || 'User'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {user.email}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  type="text"
+                  icon={<LogoutOutlined />}
+                  size="small"
+                  onClick={logout}
+                  title="Logout"
+                  style={{ color: 'var(--color-text-secondary)', minWidth: 28 }}
+                />
+              </>
+            )}
+          </div>
+        )}
+
         <button
           onClick={toggleTheme}
           style={{
