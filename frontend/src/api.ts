@@ -188,7 +188,7 @@ export interface AgentResult {
 }
 
 export interface AgentStreamChunk {
-    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result';
+    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result' | 'citations';
     content?: string;
     conversation_id?: string;
     // Agent-specific fields
@@ -196,6 +196,7 @@ export interface AgentStreamChunk {
     name?: string;
     status?: string;
     data?: any;
+    citations?: { id: string; title: string; page?: number }[];
 }
 
 /**

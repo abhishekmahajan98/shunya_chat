@@ -1,12 +1,10 @@
 import React from 'react';
-import { Tag, Spin } from 'antd';
 import {
     SearchOutlined,
     DatabaseOutlined,
     MailOutlined,
-    CheckCircleOutlined,
-    LoadingOutlined,
-    ExclamationCircleOutlined
+    CheckOutlined,
+    LoadingOutlined
 } from '@ant-design/icons';
 
 interface AgentStatus {
@@ -25,61 +23,54 @@ const agentIcons: Record<string, React.ReactNode> = {
     email: <MailOutlined />,
 };
 
-const statusColors: Record<string, string> = {
-    starting: 'processing',
-    running: 'processing',
-    complete: 'success',
-    error: 'error',
-};
-
 const AgentStatusIndicator: React.FC<AgentStatusIndicatorProps> = ({ agents }) => {
     if (agents.length === 0) return null;
 
     return (
         <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '8px',
-            padding: '12px 16px',
-            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))',
-            borderRadius: '12px',
-            marginBottom: '12px',
-            border: '1px solid rgba(139, 92, 246, 0.2)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '12px',
+            color: 'var(--color-text-secondary)',
+            marginBottom: '8px',
         }}>
-            <span style={{
-                fontSize: '12px',
-                color: 'rgba(255, 255, 255, 0.6)',
-                marginRight: '8px',
-                display: 'flex',
-                alignItems: 'center',
-            }}>
-                🤖 Agents:
-            </span>
-            {agents.map((agent) => (
-                <Tag
-                    key={agent.agent}
-                    icon={
-                        agent.status === 'starting' || agent.status === 'running'
-                            ? <Spin indicator={<LoadingOutlined style={{ fontSize: 12 }} spin />} size="small" />
-                            : agent.status === 'complete'
-                                ? <CheckCircleOutlined />
-                                : agent.status === 'error'
-                                    ? <ExclamationCircleOutlined />
-                                    : agentIcons[agent.agent]
-                    }
-                    color={statusColors[agent.status] || 'default'}
-                    style={{
-                        borderRadius: '16px',
-                        padding: '4px 12px',
-                        fontSize: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                    }}
-                >
-                    {agent.name}
-                </Tag>
-            ))}
+            <span style={{ opacity: 0.7 }}>Using:</span>
+            {agents.map((agent) => {
+                const isActive = agent.status === 'starting' || agent.status === 'running';
+                const isComplete = agent.status === 'complete';
+
+                return (
+                    <span
+                        key={agent.agent}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            background: isComplete
+                                ? 'rgba(16, 185, 129, 0.1)'
+                                : 'rgba(139, 92, 246, 0.1)',
+                            color: isComplete
+                                ? '#10b981'
+                                : 'var(--color-text-secondary)',
+                            fontSize: '11px',
+                            fontWeight: 500,
+                            transition: 'all 0.2s ease',
+                        }}
+                    >
+                        {isActive ? (
+                            <LoadingOutlined spin style={{ fontSize: '10px' }} />
+                        ) : isComplete ? (
+                            <CheckOutlined style={{ fontSize: '10px' }} />
+                        ) : (
+                            agentIcons[agent.agent]
+                        )}
+                        {agent.name}
+                    </span>
+                );
+            })}
         </div>
     );
 };

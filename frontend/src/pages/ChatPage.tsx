@@ -21,7 +21,6 @@ import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
 import { streamAgentMessage, type AgentStreamChunk } from '../api';
-import AgentStatusIndicator from '../components/AgentStatusIndicator';
 
 const { Sider, Content } = Layout;
 
@@ -60,7 +59,6 @@ const ChatPage = () => {
   const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentAgents, setCurrentAgents] = useState<Array<{ agent: string; name: string; status: 'starting' | 'running' | 'complete' | 'error' }>>([]);
 
   const screens = Grid.useBreakpoint();
   const isTablet = !screens.lg;
@@ -187,11 +185,10 @@ const ChatPage = () => {
 
     let thinkingContent = '';
     let textContent = '';
+    // Track agents in a local variable (React state is async, causes stale closure)
+    const collectedAgents: string[] = [];
 
     try {
-      // Reset agents for new request
-      setCurrentAgents([]);
-
       await streamAgentMessage(
         selectedModel.id,
         userInput,
@@ -199,29 +196,13 @@ const ChatPage = () => {
           if (chunk.type === 'meta' && chunk.conversation_id) {
             setConversationId(chunk.conversation_id);
           } else if (chunk.type === 'agent_status') {
-            // Agent starting
-            setCurrentAgents(prev => {
-              const existing = prev.find(a => a.agent === chunk.agent);
-              if (existing) {
-                return prev.map(a => a.agent === chunk.agent
-                  ? { ...a, status: (chunk.status as 'starting' | 'running' | 'complete' | 'error') || 'starting' }
-                  : a
-                );
-              }
-              return [...prev, {
-                agent: chunk.agent || '',
-                name: chunk.name || chunk.agent || '',
-                status: 'starting'
-              }];
-            });
+            // Agent starting - add to local array
+            const agentName = chunk.name || chunk.agent || '';
+            if (!collectedAgents.includes(agentName)) {
+              collectedAgents.push(agentName);
+            }
           } else if (chunk.type === 'agent_result') {
-            // Agent completed
-            setCurrentAgents(prev =>
-              prev.map(a => a.agent === chunk.agent
-                ? { ...a, status: chunk.status === 'success' ? 'complete' : 'error' }
-                : a
-              )
-            );
+            // Agent completed - no action needed, name already collected
           } else if (chunk.type === 'thinking') {
             thinkingContent += chunk.content || '';
             updateMessage(assistantMsgId, {
@@ -238,15 +219,19 @@ const ChatPage = () => {
               } : undefined,
             });
           } else if (chunk.type === 'done') {
+            // Use local collectedAgents
             updateMessage(assistantMsgId, {
               type: thinkingContent ? 'reasoning' : 'sync',
               content: textContent,
+              agents: collectedAgents.length > 0 ? collectedAgents : undefined,
               reasoning: thinkingContent ? {
                 steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
               } : undefined,
             });
-            // Clear agents after small delay for visual feedback
-            setTimeout(() => setCurrentAgents([]), 2000);
+          } else if (chunk.type === 'citations') {
+            updateMessage(assistantMsgId, {
+              citations: chunk.citations
+            });
           } else if (chunk.type === 'error') {
             updateMessage(assistantMsgId, {
               type: 'sync',
@@ -608,10 +593,6 @@ const ChatPage = () => {
               }}
             >
               <div style={{ maxWidth: 800, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
-                {/* Agent Status Indicator */}
-                {currentAgents.length > 0 && (
-                  <AgentStatusIndicator agents={currentAgents} />
-                )}
                 {messages.map((msg) => (
                   <MessageRenderer key={msg.id} message={msg} />
                 ))}

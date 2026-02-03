@@ -39,7 +39,7 @@ async def search_node(state: AgentState) -> dict:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3.1-sonar-small-128k-online",
+                    "model": "sonar-reasoning-pro",
                     "messages": [
                         {"role": "system", "content": "You are a helpful search assistant. Provide concise, factual answers with sources."},
                         {"role": "user", "content": query}
@@ -63,11 +63,13 @@ async def search_node(state: AgentState) -> dict:
                     }]
                 }
             else:
+                # Include response body for better debugging
+                error_body = response.text[:500] if response.text else "No response body"
                 return {
                     "agent_results": [{
                         "agent": "search",
                         "status": "error",
-                        "error": f"API error: {response.status_code}"
+                        "error": f"API error {response.status_code}: {error_body}"
                     }]
                 }
                 

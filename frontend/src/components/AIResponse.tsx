@@ -305,6 +305,41 @@ const extractText = (children: React.ReactNode): string => {
     return String(children || '');
 };
 
+// Helper to process text for citations
+const processText = (children: React.ReactNode): React.ReactNode => {
+    return React.Children.map(children, child => {
+        if (typeof child === 'string') {
+            // Match one or more citation blocks like [1] or [1][2][3]
+            const parts = child.split(/((?:\[\d+\])+)/g);
+            if (parts.length === 1) return child;
+
+            return parts.map((part, i) => {
+                // Check if this part is a sequence of citations
+                if (/^(?:\[\d+\])+$/.test(part)) {
+                    // Extract numbers: [1][2] -> 1,2
+                    const numbers = part.match(/\d+/g)?.join(',');
+
+                    return (
+                        <span key={i} style={{
+                            color: 'var(--color-primary)',
+                            fontSize: '0.8em',
+                            fontWeight: 600,
+                            verticalAlign: 'super',
+                            marginLeft: 1,
+                            cursor: 'pointer',
+                            opacity: 0.9,
+                        }}>
+                            {numbers}
+                        </span>
+                    );
+                }
+                return part;
+            });
+        }
+        return child;
+    });
+};
+
 // Main AI Response Component
 const AIResponse = ({ content, compact = false }: AIResponseProps) => {
     return (
@@ -349,7 +384,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                                 margin: compact ? '6px 0' : '12px 0',
                                 lineHeight: compact ? 1.5 : 1.7,
                             }}>
-                                {children}
+                                {processText(children)}
                             </p>
                         );
                     },
@@ -364,7 +399,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                                 borderBottom: '1px solid var(--color-border)',
                                 paddingBottom: 8,
                             }}>
-                                {children}
+                                {processText(children)}
                             </h1>
                         );
                     },
@@ -375,7 +410,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                                 fontWeight: 600,
                                 margin: compact ? '10px 0 6px' : '18px 0 10px',
                             }}>
-                                {children}
+                                {processText(children)}
                             </h2>
                         );
                     },
@@ -386,7 +421,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                                 fontWeight: 600,
                                 margin: compact ? '8px 0 4px' : '16px 0 8px',
                             }}>
-                                {children}
+                                {processText(children)}
                             </h3>
                         );
                     },
@@ -418,7 +453,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                                 margin: compact ? '2px 0' : '6px 0',
                                 lineHeight: compact ? 1.4 : 1.6,
                             }}>
-                                {children}
+                                {processText(children)}
                             </li>
                         );
                     },

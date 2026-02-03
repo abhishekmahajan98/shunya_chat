@@ -7,35 +7,7 @@ interface MessageRendererProps {
     message: Message;
 }
 
-// Citation Badge Component
-const CitationBadge = ({ citation }: { citation: Citation }) => (
-    <span
-        style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 8px',
-            borderRadius: 6,
-            background: 'var(--color-surface-hover)',
-            fontSize: 12,
-            color: 'var(--color-text-secondary)',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-        }}
-        onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'var(--color-primary)';
-            e.currentTarget.style.color = 'var(--color-primary)';
-        }}
-        onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'transparent';
-            e.currentTarget.style.color = 'var(--color-text-secondary)';
-        }}
-    >
-        <FileTextOutlined style={{ fontSize: 11 }} />
-        {citation.title}
-        {citation.page && <span style={{ opacity: 0.7 }}> p.{citation.page}</span>}
-    </span>
-);
+
 
 // Progress Bar Component
 const ProgressBar = ({ progress }: { progress: number }) => (
@@ -58,27 +30,22 @@ const ProgressBar = ({ progress }: { progress: number }) => (
     </div>
 );
 
-// Agent Badge Component
+// Agent Badge Component - displays agent name with subtle styling
 const AgentBadge = ({ agentId }: { agentId: string }) => {
-    const agentIcons: Record<string, string> = {
-        'web-search': '🔍',
-        'data-cruncher': '📊',
-        'code-helper': '💻',
-        'task-automator': '⚙️',
-    };
     return (
         <span style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
-            padding: '2px 6px',
+            padding: '2px 8px',
             borderRadius: 4,
-            background: 'var(--color-primary)',
-            color: 'var(--color-text-inverse)',
+            background: 'rgba(139, 92, 246, 0.1)',
+            color: 'var(--color-text-secondary)',
             fontSize: 11,
             fontWeight: 500,
+            border: '1px solid rgba(139, 92, 246, 0.2)',
         }}>
-            {agentIcons[agentId] || '🤖'}
+            {agentId}
         </span>
     );
 };
@@ -202,6 +169,77 @@ const ThinkingDisplay = ({
     );
 };
 
+// Citations Display Component
+const CitationsDisplay = ({ citations }: { citations: Citation[] }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    if (!citations || citations.length === 0) return null;
+
+    return (
+        <div style={{ marginTop: 8, borderTop: '1px solid var(--color-border)', paddingTop: 8 }}>
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'none',
+                    border: 'none',
+                    padding: '4px 0',
+                    cursor: 'pointer',
+                    color: 'var(--color-text-secondary)',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    width: '100%',
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <FileTextOutlined style={{ fontSize: 12 }} />
+                    <span>{citations.length} Sources</span>
+                </div>
+                {isExpanded ? (
+                    <UpOutlined style={{ fontSize: 10, opacity: 0.6 }} />
+                ) : (
+                    <DownOutlined style={{ fontSize: 10, opacity: 0.6 }} />
+                )}
+            </button>
+
+            {isExpanded && (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    marginTop: 8,
+                    paddingLeft: 4,
+                }}>
+                    {citations.map((citation, index) => (
+                        <div key={index} style={{ display: 'flex', gap: 8, fontSize: 12 }}>
+                            <span style={{
+                                color: 'var(--color-text-secondary)',
+                                minWidth: 20,
+                            }}>[{citation.id}]</span>
+                            <a
+                                href={citation.title}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                    color: 'var(--color-primary)',
+                                    textDecoration: 'none',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {citation.title}
+                            </a>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const MessageRenderer = ({ message }: MessageRendererProps) => {
     const isUser = message.sender === 'user';
 
@@ -316,32 +354,30 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
                         color: 'var(--color-msg-ai-text)',
                         width: '100%',
                     }}>
-                        {/* Agent badges */}
-                        {message.agents && message.agents.length > 0 && (
-                            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                                {message.agents.map((agentId) => (
-                                    <AgentBadge key={agentId} agentId={agentId} />
-                                ))}
-                            </div>
-                        )}
-
                         {/* Main content - with markdown rendering */}
                         <AIResponse content={message.content} />
 
-                        {/* Citations & Copy Button Footer */}
+                        {/* Footer: Agent tags & Copy Button */}
                         <div style={{
                             display: 'flex',
                             justifyContent: 'space-between',
-                            alignItems: 'flex-end',
-                            marginTop: (message.citations?.length || 0) > 0 ? 12 : 4
+                            alignItems: 'center',
+                            marginTop: 8,
+                            gap: 8,
                         }}>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {message.citations && message.citations.map((citation) => (
-                                    <CitationBadge key={citation.id} citation={citation} />
+                            {/* Left: Agent tags */}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                {message.agents && message.agents.length > 0 && (
+                                    <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Agents used:</span>
+                                )}
+                                {message.agents && message.agents.map((agentId) => (
+                                    <AgentBadge key={agentId} agentId={agentId} />
                                 ))}
                             </div>
+                            {/* Right: Copy Button */}
                             <CopyButton text={message.content} />
                         </div>
+                        {message.citations && <CitationsDisplay citations={message.citations} />}
                     </div>
                 )}
             </div>
@@ -352,7 +388,8 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
     return (
         <div style={{
             display: 'flex',
-            justifyContent: isUser ? 'flex-end' : 'flex-start',
+            flexDirection: 'column',
+            alignItems: isUser ? 'flex-end' : 'flex-start',
             marginBottom: 12,
         }}>
             <div style={{
@@ -366,33 +403,33 @@ const MessageRenderer = ({ message }: MessageRendererProps) => {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
             }}>
-                {/* Agent badges for assistant */}
-                {!isUser && message.agents && message.agents.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-                        {message.agents.map((agentId) => (
-                            <AgentBadge key={agentId} agentId={agentId} />
-                        ))}
-                    </div>
-                )}
-
                 {/* Message content - use AIResponse for AI, plain text for user */}
                 {isUser ? message.content : <AIResponse content={message.content} />}
 
-                {/* Citations & Copy Button */}
+                {/* Footer and Citations - only for AI */}
                 {!isUser && (
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-end',
-                        marginTop: (message.citations?.length || 0) > 0 ? 12 : 4
-                    }}>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {message.citations && message.citations.map((citation) => (
-                                <CitationBadge key={citation.id} citation={citation} />
-                            ))}
+                    <>
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginTop: 8,
+                            gap: 8,
+                        }}>
+                            {/* Left: Agent tags */}
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                {message.agents && message.agents.length > 0 && (
+                                    <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Agents used:</span>
+                                )}
+                                {message.agents && message.agents.map((agentId) => (
+                                    <AgentBadge key={agentId} agentId={agentId} />
+                                ))}
+                            </div>
+                            {/* Right: Copy Button */}
+                            <CopyButton text={message.content} />
                         </div>
-                        <CopyButton text={message.content} />
-                    </div>
+                        {message.citations && <CitationsDisplay citations={message.citations} />}
+                    </>
                 )}
             </div>
         </div>

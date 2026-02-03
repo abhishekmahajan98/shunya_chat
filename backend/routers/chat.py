@@ -385,11 +385,16 @@ async def send_message_with_agents(request: MessageCreate):
             graph = get_agent_graph()
             
             # Stream through the graph
-            final_response = None
+            final_response = ""
             active_agents = []
+            collected_results = []
             
             async for event in graph.astream(initial_state, stream_mode="updates"):
                 for node_name, node_output in event.items():
+                    # Skip if node output is None
+                    if node_output is None:
+                        continue
+                    
                     # Send agent status updates
                     if node_name == "router":
                         active_agents = node_output.get("active_agents", [])
@@ -402,17 +407,40 @@ async def send_message_with_agents(request: MessageCreate):
                         # Agent completed
                         results = node_output.get("agent_results", [])
                         for result in results:
+                            collected_results.append(result)
                             yield f"data: {json.dumps({'type': 'agent_result', 'agent': result['agent'], 'status': result['status'], 'data': result})}\n\n"
                     
                     elif node_name == "synthesizer":
-                        final_response = node_output.get("final_response")
+                        # Check if synthesis is needed
+                        needs_synthesis = node_output.get("needs_synthesis", False)
+                        if needs_synthesis:
+                            synthesis_prompt = node_output.get("synthesis_prompt", "")
             
-            # Stream the final response
-            if final_response:
-                # Stream character by character for smooth UX
-                for i in range(0, len(final_response), 10):
-                    chunk = final_response[i:i+10]
-                    yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+            # Stream the synthesis response in real-time
+            if collected_results:
+                from agents.synthesizer import stream_synthesize
+                
+                # Build prompt from collected results
+                from agents.synthesizer import _build_prompt
+                user_msg = request.content
+                prompt = _build_prompt(collected_results, user_msg)
+                
+                # Stream thinking and text in real-time
+                async for chunk in stream_synthesize(prompt, request.model):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    if chunk["type"] == "text":
+                        final_response += chunk["content"]
+                
+                # Extract and stream citations
+                citations = []
+                for result in collected_results:
+                    if result.get("agent") == "search" and "citations" in result:
+                        citations.extend(result["citations"])
+                
+                if citations:
+                    # Format citations for frontend
+                    formatted_citations = [{"id": str(i+1), "title": c, "page": None} for i, c in enumerate(citations)]
+                    yield f"data: {json.dumps({'type': 'citations', 'citations': formatted_citations})}\n\n"
             else:
                 # No agents activated - use direct LLM
                 if model_info.provider == "google":
