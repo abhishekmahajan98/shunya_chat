@@ -305,3 +305,157 @@ async def delete_conversation(conversation_id: str):
     supabase.table("conversations").delete().eq("id", conversation_id).execute()
     
     return {"status": "deleted"}
+
+
+@router.post("/chat/agent")
+async def send_message_with_agents(request: MessageCreate):
+    """
+    Stream a message response using the LangGraph agent system.
+    Agents are automatically activated based on user intent.
+    """
+    from langchain_core.messages import HumanMessage
+    from agents.graph import get_agent_graph
+    from agents.state import AGENT_REGISTRY
+    
+    supabase = get_supabase()
+    
+    # Validate model
+    model_info = get_model_info(request.model)
+    if not model_info:
+        raise HTTPException(status_code=400, detail=f"Unknown model: {request.model}")
+
+    # Get or create conversation
+    if request.conversation_id:
+        result = supabase.table("conversations").select("*").eq("id", request.conversation_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        conversation = result.data[0]
+    else:
+        conversation_id = str(uuid.uuid4())
+        conversation = {
+            "id": conversation_id,
+            "title": "New Chat",
+            "model": request.model,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        supabase.table("conversations").insert(conversation).execute()
+
+    # Add user message
+    user_message = {
+        "id": str(uuid.uuid4()),
+        "conversation_id": conversation["id"],
+        "role": "user",
+        "content": request.content,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    supabase.table("messages").insert(user_message).execute()
+
+    # Update title if first message
+    messages_result = supabase.table("messages")\
+        .select("*")\
+        .eq("conversation_id", conversation["id"])\
+        .order("created_at")\
+        .execute()
+    
+    if len(messages_result.data) == 1:
+        new_title = request.content[:50] + ("..." if len(request.content) > 50 else "")
+        supabase.table("conversations")\
+            .update({"title": new_title, "updated_at": datetime.utcnow().isoformat()})\
+            .eq("id", conversation["id"])\
+            .execute()
+
+    # Build initial agent state
+    initial_state = {
+        "messages": [HumanMessage(content=request.content)],
+        "conversation_id": conversation["id"],
+        "current_model": request.model,
+        "active_agents": [],
+        "execution_mode": "sequential",
+        "agent_results": [],
+        "final_response": None
+    }
+
+    async def generate():
+        try:
+            # Send conversation_id first
+            yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
+            
+            # Get the agent graph
+            graph = get_agent_graph()
+            
+            # Stream through the graph
+            final_response = None
+            active_agents = []
+            
+            async for event in graph.astream(initial_state, stream_mode="updates"):
+                for node_name, node_output in event.items():
+                    # Send agent status updates
+                    if node_name == "router":
+                        active_agents = node_output.get("active_agents", [])
+                        if active_agents:
+                            for agent in active_agents:
+                                agent_info = AGENT_REGISTRY.get(agent, {"name": agent})
+                                yield f"data: {json.dumps({'type': 'agent_status', 'agent': agent, 'name': agent_info['name'], 'status': 'starting'})}\n\n"
+                    
+                    elif node_name in ["search", "data", "email"]:
+                        # Agent completed
+                        results = node_output.get("agent_results", [])
+                        for result in results:
+                            yield f"data: {json.dumps({'type': 'agent_result', 'agent': result['agent'], 'status': result['status'], 'data': result})}\n\n"
+                    
+                    elif node_name == "synthesizer":
+                        final_response = node_output.get("final_response")
+            
+            # Stream the final response
+            if final_response:
+                # Stream character by character for smooth UX
+                for i in range(0, len(final_response), 10):
+                    chunk = final_response[i:i+10]
+                    yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+            else:
+                # No agents activated - use direct LLM
+                if model_info.provider == "google":
+                    provider = get_gemini_provider()
+                else:
+                    provider = get_anthropic_provider()
+                
+                message_history = [
+                    {"role": msg["role"], "content": msg["content"]}
+                    for msg in messages_result.data
+                ]
+                
+                full_response = []
+                async for chunk in provider.generate_stream(message_history, request.model):
+                    full_response.append(chunk.get("content", ""))
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+                final_response = "".join(full_response)
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+            # Store the complete response
+            if final_response:
+                assistant_message = {
+                    "id": str(uuid.uuid4()),
+                    "conversation_id": conversation["id"],
+                    "role": "assistant",
+                    "content": final_response,
+                    "created_at": datetime.utcnow().isoformat(),
+                }
+                supabase.table("messages").insert(assistant_message).execute()
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
