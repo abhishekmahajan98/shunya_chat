@@ -52,8 +52,10 @@ async def synthesizer_node(state: AgentState) -> dict:
             if "citations" in result and result["citations"]:
                 results_text += f"Sources: {', '.join(result['citations'][:3])}\n"
             if "data" in result:
-                results_text += f"Data retrieved: {result.get('record_count', 0)} records\n"
-                results_text += f"Categories: {', '.join(result['data'].keys())}\n"
+                # Include the ACTUAL data, not just metadata
+                import json
+                results_text += f"Retrieved {result.get('record_count', 0)} records:\n"
+                results_text += f"```json\n{json.dumps(result['data'], indent=2)}\n```\n"
             if "email" in result:
                 results_text += f"Email Status: {result['email']['status']}\n"
                 results_text += f"Subject: {result['email']['subject']}\n"
