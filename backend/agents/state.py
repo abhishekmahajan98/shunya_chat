@@ -1,5 +1,6 @@
 """
-Shared state schema for the LangGraph agent system.
+Shared state schema for the agent system.
+Now uses MCP-based tool registry.
 """
 from typing import TypedDict, Literal, Optional, Annotated
 from langgraph.graph import MessagesState
@@ -13,8 +14,11 @@ class AgentState(MessagesState):
     conversation_id: str
     current_model: str
     
+    # User-activated agents (from frontend toggle)
+    user_active_agents: Optional[list[str]]  # Agents user has enabled in UI
+    
     # Agent orchestration
-    active_agents: list[str]  # ["search", "data", "email"]
+    active_agents: list[str]  # [\"search\", \"data\", etc.] - decided by router
     execution_mode: Literal["sequential", "parallel", "single"]
     
     # Agent results (accumulated using reducer)
@@ -24,21 +28,12 @@ class AgentState(MessagesState):
     final_response: Optional[str]
 
 
-# Agent registry - maps agent names to their descriptions
+# MCP Tool Registry - maps tool names to their descriptions (for routing)
+# This is now dynamically populated from MCP servers
 AGENT_REGISTRY = {
     "search": {
         "name": "Web Search",
         "description": "Search the internet for current information using Perplexity",
-        "triggers": ["search", "find", "look up", "what is", "who is", "current", "latest", "news"]
+        "triggers": ["search", "find", "look up", "what is", "who is", "current", "latest", "news", "research"]
     },
-    "data": {
-        "name": "Data Query",
-        "description": "Query internal database for sample product/customer data",
-        "triggers": ["data", "database", "products", "customers", "sales", "inventory", "records"]
-    },
-    "email": {
-        "name": "Email Sender",
-        "description": "Send the results via email (mock - doesn't actually send)",
-        "triggers": ["email", "send", "mail", "notify"]
-    }
 }

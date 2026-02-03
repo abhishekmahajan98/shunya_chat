@@ -8,6 +8,7 @@ class MessageCreate(BaseModel):
     conversation_id: Optional[str] = None
     model: str
     content: str
+    active_agents: Optional[list[str]] = None  # List of activated agent IDs
 
 
 class MessageResponse(BaseModel):

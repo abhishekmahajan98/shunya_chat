@@ -1,74 +1,93 @@
 """
-LangGraph Agent Graph Construction.
-Builds the multi-agent orchestration graph.
+Simplified Agent Graph using MCP.
+Orchestrates MCP tool calls and synthesis.
 """
 from langgraph.graph import StateGraph, START, END
 from .state import AgentState
 from .router import router_node
 from .synthesizer import synthesizer_node
-from .nodes import search_node, data_node, email_node
+from .mcp_client import get_mcp_client
 
 
-def route_to_agents(state: AgentState) -> list[str]:
+async def mcp_executor_node(state: AgentState) -> dict:
     """
-    Conditional edge function: determine next nodes based on active_agents.
-    Returns list of node names to execute.
+    Execute MCP tools based on active_agents list.
+    Collects results from all activated tools.
     """
     active_agents = state.get("active_agents", [])
+    mcp_client = get_mcp_client()
     
     if not active_agents:
-        # No agents needed, go directly to synthesizer (which will return None)
-        return ["synthesizer"]
+        return {"agent_results": []}
     
-    # Map agent IDs to node names
-    return active_agents
+    results = []
+    
+    for agent_name in active_agents:
+        # Get the user's query
+        last_message = state["messages"][-1]
+        query = last_message.content if hasattr(last_message, 'content') else str(last_message)
+        
+        # Invoke the MCP tool
+        result = await mcp_client.invoke_tool(
+            server_id=agent_name,
+            tool_name=agent_name,  # Tool name matches server name for now
+            arguments={"query": query}
+        )
+        
+        # Add agent identifier to result
+        result["agent"] = agent_name
+        results.append(result)
+    
+    return {"agent_results": results}
+
+
+def route_after_router(state: AgentState) -> str:
+    """
+    Determine next step after router.
+    If agents are active, go to executor. Otherwise, skip to synthesizer.
+    """
+    if state.get("active_agents"):
+        return "executor"
+    return "synthesizer"
 
 
 def build_agent_graph():
     """
-    Build and compile the agent graph.
+    Build and compile the simplified agent graph.
     
     Flow:
-    START -> router -> [agents in parallel/sequential] -> synthesizer -> END
+    START -> router -> [executor if agents] -> synthesizer -> END
     """
     graph = StateGraph(AgentState)
     
-    # Add all nodes
+    # Add nodes
     graph.add_node("router", router_node)
-    graph.add_node("search", search_node)
-    graph.add_node("data", data_node)
-    graph.add_node("email", email_node)
+    graph.add_node("executor", mcp_executor_node)
     graph.add_node("synthesizer", synthesizer_node)
     
-    # Entry point: always start with router
+    # Entry point
     graph.add_edge(START, "router")
     
-    # Conditional routing from router to agents
-    # Using send() for parallel execution when needed
+    # Conditional routing after router
     graph.add_conditional_edges(
         "router",
-        route_to_agents,
+        route_after_router,
         {
-            "search": "search",
-            "data": "data", 
-            "email": "email",
+            "executor": "executor",
             "synthesizer": "synthesizer"
         }
     )
     
-    # All agents converge to synthesizer
-    graph.add_edge("search", "synthesizer")
-    graph.add_edge("data", "synthesizer")
-    graph.add_edge("email", "synthesizer")
+    # Executor always goes to synthesizer
+    graph.add_edge("executor", "synthesizer")
     
     # Synthesizer ends the graph
     graph.add_edge("synthesizer", END)
     
-    # Compile without checkpointer for now (can add later)
     return graph.compile()
 
 
-# Create a singleton graph instance
+# Singleton graph instance
 _agent_graph = None
 
 

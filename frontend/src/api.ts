@@ -199,15 +199,66 @@ export interface AgentStreamChunk {
     citations?: { id: string; title: string; page?: number }[];
 }
 
+// Agent Registry Types
+export type AgentCategory = 'research' | 'compliance' | 'finance' | 'automation';
+
+export interface AgentInfo {
+    id: string;
+    name: string;
+    icon: string;
+    description: string;
+    category: AgentCategory;
+    url: string;
+    hasAccess: boolean;
+    isFavorite: boolean;
+}
+
+/**
+ * Get all available agents from the backend registry.
+ */
+export async function getAgents(): Promise<AgentInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/agents`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch agents');
+    }
+    return response.json();
+}
+
+/**
+ * Get user's favorite agents.
+ */
+export async function getFavoriteAgents(): Promise<AgentInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/agents/favorites`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch favorite agents');
+    }
+    return response.json();
+}
+
+/**
+ * Toggle favorite status for an agent.
+ */
+export async function toggleAgentFavorite(agentId: string): Promise<{ id: string; isFavorite: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/favorite`, {
+        method: 'PUT',
+    });
+    if (!response.ok) {
+        throw new Error('Failed to toggle favorite');
+    }
+    return response.json();
+}
+
 /**
  * Stream a message with agent support.
  * Uses the /chat/agent endpoint which activates agents based on intent.
+ * @param activeAgents - List of agent IDs that are currently activated in the UI
  */
 export async function streamAgentMessage(
     model: string,
     content: string,
     onChunk: (chunk: AgentStreamChunk) => void,
-    conversationId?: string
+    conversationId?: string,
+    activeAgents?: string[]
 ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/chat/agent`, {
         method: 'POST',
@@ -218,6 +269,7 @@ export async function streamAgentMessage(
             model,
             content,
             conversation_id: conversationId,
+            active_agents: activeAgents,
         }),
     });
 
@@ -254,4 +306,3 @@ export async function streamAgentMessage(
         }
     }
 }
-

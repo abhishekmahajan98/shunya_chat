@@ -370,6 +370,7 @@ async def send_message_with_agents(request: MessageCreate):
         "messages": [HumanMessage(content=request.content)],
         "conversation_id": conversation["id"],
         "current_model": request.model,
+        "user_active_agents": request.active_agents,  # From frontend toggle
         "active_agents": [],
         "execution_mode": "sequential",
         "agent_results": [],
@@ -403,12 +404,12 @@ async def send_message_with_agents(request: MessageCreate):
                                 agent_info = AGENT_REGISTRY.get(agent, {"name": agent})
                                 yield f"data: {json.dumps({'type': 'agent_status', 'agent': agent, 'name': agent_info['name'], 'status': 'starting'})}\n\n"
                     
-                    elif node_name in ["search", "data", "email"]:
-                        # Agent completed
+                    elif node_name == "executor":
+                        # MCP executor completed - collect all results
                         results = node_output.get("agent_results", [])
                         for result in results:
                             collected_results.append(result)
-                            yield f"data: {json.dumps({'type': 'agent_result', 'agent': result['agent'], 'status': result['status'], 'data': result})}\n\n"
+                            yield f"data: {json.dumps({'type': 'agent_result', 'agent': result.get('agent', 'unknown'), 'status': result.get('status', 'unknown'), 'data': result})}\n\n"
                     
                     elif node_name == "synthesizer":
                         # Check if synthesis is needed

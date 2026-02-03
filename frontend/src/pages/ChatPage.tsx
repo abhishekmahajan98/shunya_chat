@@ -239,7 +239,8 @@ const ChatPage = () => {
             });
           }
         },
-        conversationId || undefined
+        conversationId || undefined,
+        activeAgents.map(a => a.id)  // Pass active agent IDs from UI
       );
     } catch (error) {
       console.error('Failed to stream message:', error);
