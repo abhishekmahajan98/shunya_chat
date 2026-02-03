@@ -16,14 +16,15 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat, type Message } from '../context/ChatContext';
+import { useChat } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
-import { streamMessage, type StreamChunk } from '../api';
+import { streamAgentMessage, type AgentStreamChunk } from '../api';
+import AgentStatusIndicator from '../components/AgentStatusIndicator';
 
 const { Sider, Content } = Layout;
-const { useBreakpoint } = Grid;
+
 
 interface ModelOption {
   id: string;
@@ -59,6 +60,7 @@ const ChatPage = () => {
   const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentAgents, setCurrentAgents] = useState<Array<{ agent: string; name: string; status: 'starting' | 'running' | 'complete' | 'error' }>>([]);
 
   const screens = Grid.useBreakpoint();
   const isTablet = !screens.lg;
@@ -187,15 +189,41 @@ const ChatPage = () => {
     let textContent = '';
 
     try {
-      await streamMessage(
+      // Reset agents for new request
+      setCurrentAgents([]);
+
+      await streamAgentMessage(
         selectedModel.id,
         userInput,
-        (chunk: StreamChunk) => {
+        (chunk: AgentStreamChunk) => {
           if (chunk.type === 'meta' && chunk.conversation_id) {
             setConversationId(chunk.conversation_id);
+          } else if (chunk.type === 'agent_status') {
+            // Agent starting
+            setCurrentAgents(prev => {
+              const existing = prev.find(a => a.agent === chunk.agent);
+              if (existing) {
+                return prev.map(a => a.agent === chunk.agent
+                  ? { ...a, status: (chunk.status as 'starting' | 'running' | 'complete' | 'error') || 'starting' }
+                  : a
+                );
+              }
+              return [...prev, {
+                agent: chunk.agent || '',
+                name: chunk.name || chunk.agent || '',
+                status: 'starting'
+              }];
+            });
+          } else if (chunk.type === 'agent_result') {
+            // Agent completed
+            setCurrentAgents(prev =>
+              prev.map(a => a.agent === chunk.agent
+                ? { ...a, status: chunk.status === 'success' ? 'complete' : 'error' }
+                : a
+              )
+            );
           } else if (chunk.type === 'thinking') {
             thinkingContent += chunk.content || '';
-
             updateMessage(assistantMsgId, {
               reasoning: {
                 steps: [{ id: '1', text: thinkingContent, status: 'running' }],
@@ -203,7 +231,6 @@ const ChatPage = () => {
             });
           } else if (chunk.type === 'text') {
             textContent += chunk.content || '';
-
             updateMessage(assistantMsgId, {
               content: textContent,
               reasoning: thinkingContent ? {
@@ -218,6 +245,8 @@ const ChatPage = () => {
                 steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
               } : undefined,
             });
+            // Clear agents after small delay for visual feedback
+            setTimeout(() => setCurrentAgents([]), 2000);
           } else if (chunk.type === 'error') {
             updateMessage(assistantMsgId, {
               type: 'sync',
@@ -579,6 +608,10 @@ const ChatPage = () => {
               }}
             >
               <div style={{ maxWidth: 800, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {/* Agent Status Indicator */}
+                {currentAgents.length > 0 && (
+                  <AgentStatusIndicator agents={currentAgents} />
+                )}
                 {messages.map((msg) => (
                   <MessageRenderer key={msg.id} message={msg} />
                 ))}

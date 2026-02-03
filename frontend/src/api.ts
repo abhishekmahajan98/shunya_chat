@@ -172,3 +172,85 @@ export async function streamMessage(
         }
     }
 }
+
+// Agent-specific types
+export interface AgentStatus {
+    agent: string;
+    name: string;
+    status: 'starting' | 'running' | 'complete' | 'error';
+}
+
+export interface AgentResult {
+    agent: string;
+    status: 'success' | 'error';
+    data?: any;
+    error?: string;
+}
+
+export interface AgentStreamChunk {
+    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result';
+    content?: string;
+    conversation_id?: string;
+    // Agent-specific fields
+    agent?: string;
+    name?: string;
+    status?: string;
+    data?: any;
+}
+
+/**
+ * Stream a message with agent support.
+ * Uses the /chat/agent endpoint which activates agents based on intent.
+ */
+export async function streamAgentMessage(
+    model: string,
+    content: string,
+    onChunk: (chunk: AgentStreamChunk) => void,
+    conversationId?: string
+): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/chat/agent`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            model,
+            content,
+            conversation_id: conversationId,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(error.detail || 'Failed to stream message');
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    onChunk(data);
+                } catch {
+                    // Skip invalid JSON
+                }
+            }
+        }
+    }
+}
+
