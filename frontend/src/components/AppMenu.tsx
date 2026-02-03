@@ -148,6 +148,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     spaceSearch,
     setSpaceSearch,
     updateSpace,
+    clearMessages,
   } = useChat();
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['folder-work', 'folder-research']));
@@ -394,7 +395,10 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => navigate('/')}
+          onClick={() => {
+            clearMessages();
+            navigate('/');
+          }}
           style={{
             width: '100%',
             borderRadius: 8,
@@ -536,27 +540,6 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
           </>
         )}
 
-        {collapsed && spaces.slice(0, 5).map((space) => (
-          <div
-            key={space.id}
-            onClick={() => handleSelectSpace(space)}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 8,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 18,
-              cursor: 'pointer',
-              margin: '4px auto',
-              background: selectedScope?.spaceId === space.id ? 'var(--color-sidebar-active)' : 'transparent',
-              border: selectedScope?.spaceId === space.id ? '1px solid var(--color-primary)' : '1px solid transparent',
-            }}
-          >
-            {space.icon}
-          </div>
-        ))}
       </div>
 
       {/* Bottom Actions */}
@@ -588,7 +571,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
                     { label: 'Logout', key: 'logout', icon: <LogoutOutlined />, onClick: logout }
                   ]
                 }}
-                placement="rightBottom"
+                placement="bottomRight"
               >
                 <div style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center', width: '100%' }}>
                   <div style={{

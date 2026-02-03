@@ -254,6 +254,7 @@ interface ChatContextType {
     messages: Message[];
     addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => string;
     updateMessage: (id: string, updates: Partial<Message>) => void;
+    clearMessages: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -527,6 +528,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 messages,
                 addMessage,
                 updateMessage,
+                clearMessages: () => setMessages([]),
             }}
         >
             {children}
