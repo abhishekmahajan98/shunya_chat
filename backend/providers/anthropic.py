@@ -3,6 +3,7 @@ from typing import AsyncGenerator
 import anthropic
 from dotenv import load_dotenv
 from .base import LLMProvider
+from system_prompt import get_system_prompt
 
 load_dotenv()
 
@@ -23,11 +24,13 @@ class AnthropicProvider(LLMProvider):
         """Generate response using Claude."""
         is_thinking = model_id.endswith("-thinking")
         base_model = model_id.replace("-thinking", "") if is_thinking else model_id
+        system_prompt = get_system_prompt("America/New_York")
 
         if is_thinking:
             response = self.sync_client.messages.create(
                 model=base_model,
                 max_tokens=16000,
+                system=system_prompt,
                 thinking={"type": "enabled", "budget_tokens": 10000},
                 messages=messages
             )
@@ -35,6 +38,7 @@ class AnthropicProvider(LLMProvider):
             response = self.sync_client.messages.create(
                 model=base_model,
                 max_tokens=8192,
+                system=system_prompt,
                 messages=messages
             )
 
@@ -51,12 +55,14 @@ class AnthropicProvider(LLMProvider):
         """Stream response using Claude with REAL-TIME thinking support."""
         is_thinking = model_id.endswith("-thinking")
         base_model = model_id.replace("-thinking", "") if is_thinking else model_id
+        system_prompt = get_system_prompt("America/New_York")
 
         if is_thinking:
             # Use ASYNC streaming for real-time events
             async with self.client.messages.stream(
                 model=base_model,
                 max_tokens=16000,
+                system=system_prompt,
                 thinking={"type": "enabled", "budget_tokens": 10000},
                 messages=messages
             ) as stream:
@@ -72,7 +78,9 @@ class AnthropicProvider(LLMProvider):
             async with self.client.messages.stream(
                 model=base_model,
                 max_tokens=8192,
+                system=system_prompt,
                 messages=messages
             ) as stream:
                 async for text in stream.text_stream:
                     yield {"type": "text", "content": text}
+

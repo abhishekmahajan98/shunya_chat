@@ -8,6 +8,7 @@ from google.genai.types import (
 )
 from dotenv import load_dotenv
 from .base import LLMProvider
+from system_prompt import get_system_prompt
 
 load_dotenv()
 
@@ -27,6 +28,7 @@ class GeminiProvider(LLMProvider):
         
         # Gemini 3 uses thinking_level (LOW/HIGH) + include_thoughts
         config = GenerateContentConfig(
+            system_instruction=get_system_prompt("America/New_York"),
             thinking_config=ThinkingConfig(
                 include_thoughts=True,
                 thinking_level=ThinkingLevel.HIGH if "pro" in model_id.lower() else ThinkingLevel.LOW
@@ -51,6 +53,7 @@ class GeminiProvider(LLMProvider):
         # - include_thoughts=True: MANDATORY to get thoughts in response
         # - thinking_level: HIGH for deep reasoning (pro), LOW for fast (flash)
         config = GenerateContentConfig(
+            system_instruction=get_system_prompt("America/New_York"),
             thinking_config=ThinkingConfig(
                 include_thoughts=True,
                 thinking_level=ThinkingLevel.HIGH if "pro" in model_id.lower() else ThinkingLevel.LOW
