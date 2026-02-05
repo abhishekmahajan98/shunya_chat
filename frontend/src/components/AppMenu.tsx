@@ -22,6 +22,8 @@ import {
   UserAddOutlined,
   LogoutOutlined,
   UserOutlined,
+  MessageOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
@@ -149,8 +151,17 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     setSpaceSearch,
     updateSpace,
     clearMessages,
+    setConversationId,
+    // History
+    conversations,
+    loadConversation,
+    conversationId,
+    hasMoreHistory,
+    loadMoreHistory,
+    isLoadingHistory,
   } = useChat();
 
+  const [sidebarTab, setSidebarTab] = useState<'chats' | 'spaces'>('chats');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['folder-work', 'folder-research']));
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set(['personal']));
   const [membersModalSpace, setMembersModalSpace] = useState<Space | null>(null);
@@ -397,6 +408,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
           icon={<PlusOutlined />}
           onClick={() => {
             clearMessages();
+            setConversationId(null);
             navigate('/');
           }}
           style={{
@@ -430,8 +442,122 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         </div>
       )}
 
-      {/* Spaces List */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '8px' : '0 12px' }}>
+      {/* Tab Toggle */}
+      {!collapsed && (
+        <div style={{
+          display: 'flex',
+          padding: '0 12px 12px',
+          gap: 4,
+        }}>
+          <button
+            onClick={() => setSidebarTab('chats')}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              border: 'none',
+              borderRadius: 6,
+              background: sidebarTab === 'chats' ? 'var(--color-primary)' : 'var(--color-surface)',
+              color: sidebarTab === 'chats' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            Chats
+          </button>
+          <button
+            onClick={() => setSidebarTab('spaces')}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              border: 'none',
+              borderRadius: 6,
+              background: sidebarTab === 'spaces' ? 'var(--color-primary)' : 'var(--color-surface)',
+              color: sidebarTab === 'spaces' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            Spaces
+          </button>
+        </div>
+      )}
+
+      {/* History List - only show when Chats tab is active */}
+      <div style={{
+        padding: collapsed ? '8px' : '0 12px',
+        flex: 1,
+        overflowY: 'auto',
+        display: (sidebarTab === 'chats' || collapsed) ? 'block' : 'none',
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {conversations.map(chat => (
+            <div
+              key={chat.id}
+              onClick={() => loadConversation(chat.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 10px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                background: conversationId === chat.id ? 'var(--color-sidebar-active)' : 'transparent',
+                borderLeft: conversationId === chat.id ? '2px solid var(--color-primary)' : '2px solid transparent',
+                marginLeft: -2,
+              }}
+              onMouseEnter={(e) => {
+                if (conversationId !== chat.id) e.currentTarget.style.background = 'var(--color-sidebar-hover)';
+              }}
+              onMouseLeave={(e) => {
+                if (conversationId !== chat.id) e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <MessageOutlined style={{ fontSize: 16, color: conversationId === chat.id ? 'var(--color-primary)' : 'var(--color-text-tertiary)' }} />
+              {!collapsed && (
+                <span style={{
+                  flex: 1,
+                  fontSize: 14,
+                  color: conversationId === chat.id ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {chat.title || 'New Chat'}
+                </span>
+              )}
+            </div>
+          ))}
+          {conversations.length === 0 && !collapsed && (
+            <div style={{ padding: '8px 12px', color: 'var(--color-text-tertiary)', fontSize: 13, fontStyle: 'italic' }}>
+              No recent chats
+            </div>
+          )}
+          {hasMoreHistory && conversations.length > 0 && !collapsed && (
+            <Button
+              type="text"
+              size="small"
+              onClick={loadMoreHistory}
+              loading={isLoadingHistory}
+              style={{
+                width: '100%',
+                color: 'var(--color-text-tertiary)',
+                fontSize: 12,
+                marginTop: 4,
+              }}
+            >
+              {isLoadingHistory ? 'Loading...' : 'Load More'}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Spaces List - only show when Spaces tab is active */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '8px' : '0 12px', display: (sidebarTab === 'spaces' || collapsed) ? 'block' : 'none' }}>
         {!collapsed && pinnedSpaces.length > 0 && (
           <>
             <div style={{

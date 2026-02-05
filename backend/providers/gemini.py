@@ -24,7 +24,7 @@ class GeminiProvider(LLMProvider):
 
     async def generate(self, messages: list[dict], model_id: str) -> str:
         """Generate response using Gemini."""
-        contents = self._format_messages(messages)
+        contents = await self._format_messages(messages)
         
         # Gemini 3 uses thinking_level (LOW/HIGH) + include_thoughts
         config = GenerateContentConfig(
@@ -36,7 +36,7 @@ class GeminiProvider(LLMProvider):
             response_modalities=["TEXT"]
         )
         
-        response = self.client.models.generate_content(
+        response = await self.client.aio.models.generate_content(
             model=model_id,
             contents=contents,
             config=config
@@ -47,7 +47,7 @@ class GeminiProvider(LLMProvider):
         self, messages: list[dict], model_id: str
     ) -> AsyncGenerator[dict, None]:
         """Stream response using Gemini 3 with REAL-TIME thinking support."""
-        contents = self._format_messages(messages)
+        contents = await self._format_messages(messages)
         
         # Configure Gemini 3 Thinking
         # - include_thoughts=True: MANDATORY to get thoughts in response
@@ -80,13 +80,34 @@ class GeminiProvider(LLMProvider):
                 elif part.text:
                     yield {"type": "text", "content": part.text}
 
-    def _format_messages(self, messages: list[dict]) -> list[dict]:
-        """Convert messages to Gemini format."""
+    async def _format_messages(self, messages: list[dict]) -> list[dict]:
+        """Convert messages to Gemini format, handling attachments."""
+        from utils import download_file_as_base64
+        
         contents = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
+            parts = [{"text": msg["content"]}]
+            
+            # Handle attachments for user messages
+            if role == "user" and msg.get("attachments"):
+                for attachment in msg["attachments"]:
+                    # Ensure it's a list of dicts (if coming from DB/JSON)
+                    # or list of models
+                    url = attachment.get("url") if isinstance(attachment, dict) else attachment.url
+                    if url:
+                        result = await download_file_as_base64(url)
+                        if result:
+                            base64_str, mime_type = result
+                            parts.append({
+                                "inline_data": {
+                                    "mime_type": mime_type,
+                                    "data": base64_str
+                                }
+                            })
+            
             contents.append({
                 "role": role,
-                "parts": [{"text": msg["content"]}]
+                "parts": parts
             })
         return contents

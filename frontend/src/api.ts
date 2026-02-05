@@ -1,5 +1,13 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+/**
+ * Get auth headers for API requests
+ */
+function getAuthHeaders(): Record<string, string> {
+    const token = localStorage.getItem('auth_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
 export interface ModelInfo {
     id: string;
     name: string;
@@ -27,6 +35,7 @@ export interface MessageOut {
     role: 'user' | 'assistant';
     content: string;
     created_at: string;
+    attachments?: { id: string; name: string; type: string; url: string; size: number }[];
 }
 
 export interface ConversationDetail {
@@ -78,10 +87,12 @@ export async function sendMessage(
 }
 
 /**
- * Get list of conversations.
+ * Get list of conversations with pagination.
  */
-export async function getConversations(): Promise<ConversationSummary[]> {
-    const response = await fetch(`${API_BASE_URL}/api/conversations`);
+export async function getConversations(limit: number = 20, offset: number = 0): Promise<ConversationSummary[]> {
+    const response = await fetch(`${API_BASE_URL}/api/conversations?limit=${limit}&offset=${offset}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch conversations');
     }
@@ -92,7 +103,9 @@ export async function getConversations(): Promise<ConversationSummary[]> {
  * Get a conversation with all messages.
  */
 export async function getConversation(conversationId: string): Promise<ConversationDetail> {
-    const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`);
+    const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch conversation');
     }
@@ -213,13 +226,6 @@ export interface AgentInfo {
     isFavorite: boolean;
 }
 
-/**
- * Get auth headers for API requests
- */
-function getAuthHeaders(): Record<string, string> {
-    const token = localStorage.getItem('auth_token');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-}
 
 /**
  * Get all available agents from the backend registry.
@@ -271,18 +277,21 @@ export async function streamAgentMessage(
     content: string,
     onChunk: (chunk: AgentStreamChunk) => void,
     conversationId?: string,
-    activeAgents?: string[]
+    activeAgents?: string[],
+    attachments?: any[]
 ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/chat/agent`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            ...getAuthHeaders(),
         },
         body: JSON.stringify({
             model,
             content,
             conversation_id: conversationId,
             active_agents: activeAgents,
+            attachments,
         }),
     });
 
@@ -345,6 +354,41 @@ export async function registerAgent(agent: RegisterAgentRequest): Promise<{ id: 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
         throw new Error(error.detail || 'Failed to register agent');
+    }
+
+    return response.json();
+}
+
+/**
+ * Upload a file to Supabase storage.
+ * Note: Uses direct Supabase client would be better, but for now we'll assume we have a supabase client available
+ * or we can use a simple fetch if we had an upload endpoint. 
+ * OR, since we are using supabase-js client in common code, we can use it here.
+ * But `api.ts` seems to use fetch. Let's stick to using the Supabase client directly in the component 
+ * OR create a simple wrapper here if we have the client initialized.
+ * 
+ * Wait, the auth system uses supabase client. Let's import it from context or similar?
+ * Actually, to keep it clean, let's implement `uploadFile` using the supabase client from `lib/supabase` if it exists,
+ * or just export a function that takes the file and uploads it.
+ */
+// We need supabase client. Let's assume we import from logic or pass it.
+// Simpler: Let's assume the component will handle the upload using the supabase client available there.
+// But wait, the plan said "Modify api.ts - Add uploadFile function".
+// Let's implement it here using the supabase client instance.
+
+export async function uploadFile(file: File): Promise<{ url: string; path: string; name: string; type: string; size: number }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+        method: 'POST',
+        headers: getAuthHeaders(), // Does not need Content-Type for FormData
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(error.detail || 'Failed to upload file');
     }
 
     return response.json();

@@ -169,6 +169,60 @@ const ThinkingDisplay = ({
     );
 };
 
+// Attachment Grid Component
+const AttachmentGrid = ({ attachments }: { attachments: Message['attachments'] }) => {
+    if (!attachments || attachments.length === 0) return null;
+
+    return (
+        <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginBottom: 8,
+        }}>
+            {attachments.map(att => (
+                <div key={att.id} style={{
+                    width: 120,
+                    height: 120,
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    border: '1px solid var(--color-border)',
+                    background: 'var(--color-bg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                }}>
+                    {att.type.startsWith('image/') ? (
+                        <img
+                            src={att.url}
+                            alt={att.name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onClick={() => window.open(att.url, '_blank')}
+                            title="Click to view full size"
+                        />
+                    ) : (
+                        <a href={att.url} target="_blank" rel="noopener noreferrer" style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            textDecoration: 'none',
+                            color: 'var(--color-text)',
+                            padding: 8,
+                            textAlign: 'center'
+                        }}>
+                            <FileTextOutlined style={{ fontSize: 24, marginBottom: 4, color: 'var(--color-text-secondary)' }} />
+                            <span style={{ fontSize: 11, wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {att.name}
+                            </span>
+                        </a>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+};
+
 // Citations Display Component
 const CitationsDisplay = ({ citations }: { citations: Citation[] }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -354,6 +408,8 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
                         color: 'var(--color-msg-ai-text)',
                         width: '100%',
                     }}>
+                        <AttachmentGrid attachments={message.attachments} />
+
                         {/* Main content - with markdown rendering */}
                         <AIResponse content={message.content} />
 
@@ -403,6 +459,8 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
             }}>
+                <AttachmentGrid attachments={message.attachments} />
+
                 {/* Message content - use AIResponse for AI, plain text for user */}
                 {isUser ? message.content : <AIResponse content={message.content} />}
 
@@ -448,7 +506,8 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
         JSON.stringify(prevMsg.reasoning) === JSON.stringify(nextMsg.reasoning) &&
         JSON.stringify(prevMsg.citations) === JSON.stringify(nextMsg.citations) &&
         JSON.stringify(prevMsg.agents) === JSON.stringify(nextMsg.agents) &&
-        JSON.stringify(prevMsg.task) === JSON.stringify(nextMsg.task)
+        JSON.stringify(prevMsg.task) === JSON.stringify(nextMsg.task) &&
+        JSON.stringify(prevMsg.attachments) === JSON.stringify(nextMsg.attachments)
     );
 });
 

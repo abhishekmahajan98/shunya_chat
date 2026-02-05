@@ -16,11 +16,11 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat } from '../context/ChatContext';
+import { useChat, type Attachment } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
-import { streamAgentMessage, type AgentStreamChunk } from '../api';
+import { streamAgentMessage, type AgentStreamChunk, uploadFile } from '../api';
 
 const { Sider, Content } = Layout;
 
@@ -48,6 +48,8 @@ const ChatPage = () => {
     setSelectedScope,
     activeAgents,
     backgroundTasks,
+    conversationId,
+    setConversationId,
   } = useChat();
 
   const [inputValue, setInputValue] = useState('');
@@ -57,8 +59,43 @@ const ChatPage = () => {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightExpanded, setRightExpanded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Attachments state
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIsUploading(true);
+      try {
+        const newAttachments: Attachment[] = [];
+        for (let i = 0; i < e.target.files.length; i++) {
+          const file = e.target.files[i];
+          const result = await uploadFile(file);
+          newAttachments.push({
+            id: crypto.randomUUID(),
+            name: result.name,
+            type: result.type,
+            url: result.url,
+            size: result.size
+          });
+        }
+        setAttachments(prev => [...prev, ...newAttachments]);
+      } catch (error) {
+        console.error("Upload failed:", error);
+        antMessage.error("Failed to upload file");
+      } finally {
+        setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
 
   const screens = Grid.useBreakpoint();
   const isTablet = !screens.lg;
@@ -165,10 +202,12 @@ const ChatPage = () => {
 
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isLoading) return;
+    if ((!inputValue.trim() && attachments.length === 0) || isLoading || isUploading) return;
 
     const userInput = inputValue;
+    const currentAttachments = [...attachments]; // Capture current attachments
     setInputValue('');
+    setAttachments([]); // Clear attachments immediately
     setIsLoading(true);
 
 
@@ -177,6 +216,7 @@ const ChatPage = () => {
       type: 'sync',
       sender: 'user',
       content: userInput,
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined
     });
 
     // Create placeholder for assistant response with pending state (loader)
@@ -255,7 +295,8 @@ const ChatPage = () => {
           }
         },
         conversationId || undefined,
-        activeAgents.map(a => a.id)  // Pass active agent IDs from UI
+        activeAgents.map(a => a.id),  // Pass active agent IDs from UI
+        currentAttachments.length > 0 ? currentAttachments : undefined
       );
     } catch (error) {
       console.error('Failed to stream message:', error);
@@ -632,6 +673,58 @@ const ChatPage = () => {
                 background: 'var(--color-surface)',
                 transition: 'border-color 0.2s ease',
               }}>
+                {/* File Previews */}
+                {(attachments.length > 0 || isUploading) && (
+                  <div style={{ display: 'flex', gap: 8, padding: '8px 16px', overflowX: 'auto', borderBottom: '1px solid var(--color-border-light)' }}>
+                    {attachments.map(att => (
+                      <div key={att.id} style={{
+                        position: 'relative',
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        background: 'var(--color-bg)',
+                        border: '1px solid var(--color-border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        {att.type.startsWith('image/') ? (
+                          <img src={att.url} alt={att.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
+                        ) : (
+                          <FileTextOutlined style={{ fontSize: 20, color: 'var(--color-text-secondary)' }} />
+                        )}
+                        <button
+                          onClick={() => removeAttachment(att.id)}
+                          style={{
+                            position: 'absolute',
+                            top: -6,
+                            right: -6,
+                            width: 16,
+                            height: 16,
+                            borderRadius: '50%',
+                            background: 'var(--color-text)',
+                            color: 'var(--color-bg)',
+                            border: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: 10
+                          }}
+                        >
+                          <CloseOutlined />
+                        </button>
+                      </div>
+                    ))}
+                    {isUploading && (
+                      <div style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ClockCircleOutlined spin style={{ color: 'var(--color-primary)' }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <Input.TextArea
                   placeholder={`Message ${selectedScope?.spaceName || 'Shunya Chat'}...`}
                   value={inputValue}
@@ -657,10 +750,19 @@ const ChatPage = () => {
                 }}>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {/* Attach */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      hidden
+                      multiple
+                      onChange={handleFileSelect}
+                    />
                     <Button
                       type="text"
                       icon={<PaperClipOutlined />}
                       style={{ color: 'var(--color-text-secondary)' }}
+                      onClick={() => fileInputRef.current?.click()}
+                      loading={isUploading}
                     />
 
                     {/* Scope Pill */}

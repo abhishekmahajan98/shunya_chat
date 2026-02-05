@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException, Header, Depends, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 import json
 import uuid
@@ -57,14 +57,67 @@ def get_anthropic_provider():
     return _anthropic_provider
 
 
+async def generate_title(conversation_id: str, content: str):
+    """Generate a short title using Gemini Flash."""
+    try:
+        provider = get_gemini_provider()
+        prompt = [
+            {"role": "user", "content": f"Summarize the following message into a short, concise title (max 5-6 words) for a chat history. Do not use quotes:\n\n{content}"}
+        ]
+        
+        # Use Gemini Flash for speed
+        title = await provider.generate(prompt, "gemini-3-flash-preview")
+        title = title.strip().strip('"').strip("'")
+        
+        supabase = get_supabase()
+        supabase.table("conversations").update({"title": title, "updated_at": datetime.utcnow().isoformat()}).eq("id", conversation_id).execute()
+    except Exception as e:
+        print(f"Failed to generate title: {str(e)}")
+
+
 @router.get("/models", response_model=list[ModelInfo])
 async def list_models():
     """Get available models."""
     return AVAILABLE_MODELS
 
 
+@router.post("/upload")
+async def upload_file(file: UploadFile, user_id: Optional[str] = Depends(get_optional_user_id)):
+    """Upload a file to Supabase storage."""
+    # if not user_id:
+    #     raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    supabase = get_supabase()
+    file_content = await file.read()
+    
+    # Generate unique path
+    file_ext = file.filename.split('.')[-1] if '.' in file.filename else 'bin'
+    file_path = f"{uuid.uuid4()}.{file_ext}"
+    
+    try:
+        # Upload to 'chat-attachments' bucket
+        supabase.storage.from_("chat-attachments").upload(
+            file_path,
+            file_content,
+            {"content-type": file.content_type}
+        )
+        
+        # Get public URL
+        public_url = supabase.storage.from_("chat-attachments").get_public_url(file_path)
+        
+        return {
+            "url": public_url,
+            "path": file_path,
+            "name": file.filename,
+            "type": file.content_type,
+            "size": len(file_content)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
 @router.post("/chat", response_model=MessageResponse)
-async def send_message(request: MessageCreate, user_id: Optional[str] = Depends(get_optional_user_id)):
+async def send_message(request: MessageCreate, background_tasks: BackgroundTasks, user_id: Optional[str] = Depends(get_optional_user_id)):
     """Send a message and get AI response."""
     supabase = get_supabase()
     
@@ -100,6 +153,7 @@ async def send_message(request: MessageCreate, user_id: Optional[str] = Depends(
         "role": "user",
         "content": request.content,
         "created_at": datetime.utcnow().isoformat(),
+        "attachments": [a.model_dump() for a in request.attachments] if request.attachments else []
     }
     supabase.table("messages").insert(user_message).execute()
 
@@ -110,10 +164,13 @@ async def send_message(request: MessageCreate, user_id: Optional[str] = Depends(
         .order("created_at")\
         .execute()
     
-    message_history = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in messages_result.data
-    ]
+    # Pass full message objects including attachments to provider
+    message_history = []
+    for msg in messages_result.data:
+        history_msg = {"role": msg["role"], "content": msg["content"]}
+        if msg.get("attachments"):
+            history_msg["attachments"] = msg["attachments"]
+        message_history.append(history_msg)
 
     # Get response from appropriate provider
     try:
@@ -139,11 +196,7 @@ async def send_message(request: MessageCreate, user_id: Optional[str] = Depends(
 
     # Update conversation title if it's the first message
     if len(messages_result.data) == 1:
-        new_title = request.content[:50] + ("..." if len(request.content) > 50 else "")
-        supabase.table("conversations")\
-            .update({"title": new_title, "updated_at": datetime.utcnow().isoformat()})\
-            .eq("id", conversation["id"])\
-            .execute()
+        background_tasks.add_task(generate_title, conversation["id"], request.content)
 
     return MessageResponse(
         conversation_id=conversation["id"],
@@ -154,7 +207,7 @@ async def send_message(request: MessageCreate, user_id: Optional[str] = Depends(
 
 
 @router.post("/chat/stream")
-async def send_message_stream(request: MessageCreate, user_id: Optional[str] = Depends(get_optional_user_id)):
+async def send_message_stream(request: MessageCreate, background_tasks: BackgroundTasks, user_id: Optional[str] = Depends(get_optional_user_id)):
     """Stream a message response using SSE."""
     supabase = get_supabase()
     
@@ -188,6 +241,7 @@ async def send_message_stream(request: MessageCreate, user_id: Optional[str] = D
         "role": "user",
         "content": request.content,
         "created_at": datetime.utcnow().isoformat(),
+        "attachments": [a.model_dump() for a in request.attachments] if request.attachments else []
     }
     supabase.table("messages").insert(user_message).execute()
 
@@ -198,18 +252,16 @@ async def send_message_stream(request: MessageCreate, user_id: Optional[str] = D
         .order("created_at")\
         .execute()
     
-    message_history = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in messages_result.data
-    ]
+    message_history = []
+    for msg in messages_result.data:
+        history_msg = {"role": msg["role"], "content": msg["content"]}
+        if msg.get("attachments"):
+            history_msg["attachments"] = msg["attachments"]
+        message_history.append(history_msg)
 
     # Update title if first message
     if len(messages_result.data) == 1:
-        new_title = request.content[:50] + ("..." if len(request.content) > 50 else "")
-        supabase.table("conversations")\
-            .update({"title": new_title, "updated_at": datetime.utcnow().isoformat()})\
-            .eq("id", conversation["id"])\
-            .execute()
+        background_tasks.add_task(generate_title, conversation["id"], request.content)
 
     # Get provider
     if model_info.provider == "google":
@@ -253,8 +305,12 @@ async def send_message_stream(request: MessageCreate, user_id: Optional[str] = D
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
-async def list_conversations(user_id: Optional[str] = Depends(get_optional_user_id)):
-    """List all conversations for the authenticated user."""
+async def list_conversations(
+    user_id: Optional[str] = Depends(get_optional_user_id),
+    limit: int = 20,
+    offset: int = 0
+):
+    """List conversations for the authenticated user with pagination."""
     if not user_id:
         return []
         
@@ -263,6 +319,7 @@ async def list_conversations(user_id: Optional[str] = Depends(get_optional_user_
         .select("*")\
         .eq("user_id", user_id)\
         .order("updated_at", desc=True)\
+        .range(offset, offset + limit - 1)\
         .execute()
     
     return [
@@ -309,6 +366,7 @@ async def get_conversation(conversation_id: str, user_id: Optional[str] = Depend
                 role=msg["role"],
                 content=msg["content"],
                 created_at=msg["created_at"],
+                attachments=msg.get("attachments")  # Include attachments
             )
             for msg in messages_result.data
         ],
@@ -339,7 +397,7 @@ async def delete_conversation(conversation_id: str, user_id: Optional[str] = Dep
 
 
 @router.post("/chat/agent")
-async def send_message_with_agents(request: MessageCreate, user_id: Optional[str] = Depends(get_optional_user_id)):
+async def send_message_with_agents(request: MessageCreate, background_tasks: BackgroundTasks, user_id: Optional[str] = Depends(get_optional_user_id)):
     """
     Stream a message response using the LangGraph agent system.
     Agents are automatically activated based on user intent.
@@ -363,9 +421,13 @@ async def send_message_with_agents(request: MessageCreate, user_id: Optional[str
         conversation = result.data[0]
     else:
         conversation_id = str(uuid.uuid4())
+        # Create title from first 30 chars of message
+        title = request.content[:30].strip()
+        if len(request.content) > 30:
+            title += "..."
         conversation = {
             "id": conversation_id,
-            "title": "New Chat",
+            "title": title,
             "model": request.model,
             "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
@@ -380,22 +442,9 @@ async def send_message_with_agents(request: MessageCreate, user_id: Optional[str
         "role": "user",
         "content": request.content,
         "created_at": datetime.utcnow().isoformat(),
+        "attachments": [a.model_dump() for a in request.attachments] if request.attachments else []
     }
     supabase.table("messages").insert(user_message).execute()
-
-    # Update title if first message
-    messages_result = supabase.table("messages")\
-        .select("*")\
-        .eq("conversation_id", conversation["id"])\
-        .order("created_at")\
-        .execute()
-    
-    if len(messages_result.data) == 1:
-        new_title = request.content[:50] + ("..." if len(request.content) > 50 else "")
-        supabase.table("conversations")\
-            .update({"title": new_title, "updated_at": datetime.utcnow().isoformat()})\
-            .eq("id", conversation["id"])\
-            .execute()
 
     # Build initial agent state
     initial_state = {
@@ -481,10 +530,19 @@ async def send_message_with_agents(request: MessageCreate, user_id: Optional[str
                 else:
                     provider = get_anthropic_provider()
                 
-                message_history = [
-                    {"role": msg["role"], "content": msg["content"]}
-                    for msg in messages_result.data
-                ]
+                # Fetch message history for context
+                messages_result = supabase.table("messages")\
+                    .select("*")\
+                    .eq("conversation_id", conversation["id"])\
+                    .order("created_at")\
+                    .execute()
+                
+                message_history = []
+                for msg in messages_result.data:
+                    history_msg = {"role": msg["role"], "content": msg["content"]}
+                    if msg.get("attachments"):
+                        history_msg["attachments"] = msg["attachments"]
+                    message_history.append(history_msg)
                 
                 full_response = []
                 async for chunk in provider.generate_stream(message_history, request.model):

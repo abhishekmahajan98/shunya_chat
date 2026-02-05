@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getAgents, toggleAgentFavorite as apiToggleFavorite } from '../api';
+import { getAgents, toggleAgentFavorite as apiToggleFavorite, getConversations, getConversation, type ConversationSummary } from '../api';
+import { useAuth } from './AuthContext';
 
 // Types
 export interface User {
@@ -88,6 +89,14 @@ export interface BackgroundTask {
     completedAt?: Date;
 }
 
+export interface Attachment {
+    id: string;
+    name: string;
+    type: string;
+    url: string;
+    size: number;
+}
+
 export interface Message {
     id: string;
     type: 'sync' | 'reasoning' | 'async-task';
@@ -102,6 +111,7 @@ export interface Message {
     task?: AsyncTask;
     agents?: string[];
     pending?: boolean;
+    attachments?: Attachment[];
 }
 
 // Mock Data - Personal Space with folder hierarchy
@@ -255,6 +265,16 @@ interface ChatContextType {
     addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => string;
     updateMessage: (id: string, updates: Partial<Message>) => void;
     clearMessages: () => void;
+    conversationId: string | null;
+    setConversationId: (id: string | null) => void;
+
+    // History
+    conversations: ConversationSummary[];
+    isLoadingHistory: boolean;
+    hasMoreHistory: boolean;
+    refreshHistory: () => Promise<void>;
+    loadMoreHistory: () => Promise<void>;
+    loadConversation: (id: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -310,6 +330,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Messages
     const [messages, setMessages] = useState<Message[]>([]);
+    const [conversationId, setConversationId] = useState<string | null>(null);
 
     const toggleSpacePin = (spaceId: string) => {
         setSpaces((prev) =>
@@ -499,6 +520,81 @@ export function ChatProvider({ children }: ChatProviderProps) {
         );
     };
 
+    // History
+    const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [hasMoreHistory, setHasMoreHistory] = useState(true);
+    const HISTORY_PAGE_SIZE = 20;
+
+    const refreshHistory = async () => {
+        setIsLoadingHistory(true);
+        try {
+            const data = await getConversations(HISTORY_PAGE_SIZE, 0);
+            setConversations(data);
+            setHasMoreHistory(data.length === HISTORY_PAGE_SIZE);
+        } catch (error) {
+            console.error('Failed to load history:', error);
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    };
+
+    const loadMoreHistory = async () => {
+        if (isLoadingHistory || !hasMoreHistory) return;
+        setIsLoadingHistory(true);
+        try {
+            const data = await getConversations(HISTORY_PAGE_SIZE, conversations.length);
+            setConversations(prev => [...prev, ...data]);
+            setHasMoreHistory(data.length === HISTORY_PAGE_SIZE);
+        } catch (error) {
+            console.error('Failed to load more history:', error);
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    };
+
+    const loadConversation = async (id: string) => {
+        if (id === conversationId) return;
+        setIsLoadingHistory(true);
+        try {
+            const data = await getConversation(id);
+            setConversationId(data.id);
+
+            // Map API messages to UI messages
+            const uiMessages: Message[] = data.messages.map(msg => ({
+                id: msg.id,
+                type: 'sync', // Assuming sync for history messages
+                sender: msg.role === 'user' ? 'user' : 'assistant',
+                content: msg.content,
+                timestamp: new Date(msg.created_at),
+                attachments: msg.attachments as any,
+            }));
+
+            setMessages(uiMessages);
+        } catch (error) {
+            console.error('Failed to load conversation:', error);
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    };
+
+    // Get auth state
+    const { isAuthenticated } = useAuth();
+
+    // Load history on mount
+    useEffect(() => {
+        if (isAuthenticated) {
+            refreshHistory();
+        }
+    }, [isAuthenticated]);
+
+    // Refresh history when a new conversation is created
+    useEffect(() => {
+        if (conversationId) {
+            refreshHistory();
+        }
+    }, [conversationId]);
+
     return (
         <ChatContext.Provider
             value={{
@@ -528,14 +624,26 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 messages,
                 addMessage,
                 updateMessage,
-                clearMessages: () => setMessages([]),
+                clearMessages: () => {
+                    setMessages([]);
+                    refreshHistory();
+                },
+                conversationId,
+                setConversationId,
+
+                // History
+                conversations,
+                isLoadingHistory,
+                hasMoreHistory,
+                refreshHistory,
+                loadMoreHistory,
+                loadConversation,
             }}
         >
             {children}
         </ChatContext.Provider>
     );
 }
-
 export function useChat() {
     const context = useContext(ChatContext);
     if (!context) {
@@ -543,3 +651,5 @@ export function useChat() {
     }
     return context;
 }
+
+
