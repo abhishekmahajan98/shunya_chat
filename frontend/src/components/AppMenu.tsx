@@ -491,7 +491,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         padding: collapsed ? '8px' : '0 12px',
         flex: 1,
         overflowY: 'auto',
-        display: (sidebarTab === 'chats' || collapsed) ? 'block' : 'none',
+        display: (sidebarTab === 'chats' && !collapsed) ? 'block' : 'none',
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isLoadingHistory && conversations.length === 0 ? (
@@ -566,7 +566,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
       </div>
 
       {/* Spaces List - only show when Spaces tab is active */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '8px' : '0 12px', display: (sidebarTab === 'spaces' || collapsed) ? 'block' : 'none' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '8px' : '0 12px', display: (sidebarTab === 'spaces' && !collapsed) ? 'block' : 'none' }}>
         {!collapsed && pinnedSpaces.length > 0 && (
           <>
             <div style={{
@@ -676,6 +676,9 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         )}
 
       </div>
+
+      {/* Spacer to push bottom actions down when collapsed */}
+      {collapsed && <div style={{ flex: 1 }} />}
 
       {/* Bottom Actions */}
       <div style={{
