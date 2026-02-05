@@ -409,53 +409,54 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
                 </Typography.Text>
               </div>
 
-              <div
-                onClick={onToggleExpand}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  color: 'var(--color-text-secondary)',
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--color-surface-hover)';
-                  e.currentTarget.style.color = 'var(--color-text)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--color-surface)';
-                  e.currentTarget.style.color = 'var(--color-text-secondary)';
-                }}
-              >
-                <ShrinkOutlined /> Back to Chat
-              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    color: 'var(--color-primary)',
+                    background: 'var(--color-primary-bg-hover)',
+                    border: '1px solid var(--color-primary-border)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={() => window.location.href = '/register-agent'}
+                >
+                  + Submit Agent
+                </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  color: 'var(--color-primary)',
-                  background: 'var(--color-primary-bg-hover)',
-                  border: '1px solid var(--color-primary-border)',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  transition: 'all 0.2s ease',
-                  marginLeft: 8,
-                }}
-                onClick={() => window.location.href = '/register-agent'} // Using href to ensure clean navigation, or use navigate hook if available
-              >
-                + Submit Agent
+                <div
+                  onClick={onToggleExpand}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    color: 'var(--color-text-secondary)',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--color-surface-hover)';
+                    e.currentTarget.style.color = 'var(--color-text)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--color-surface)';
+                    e.currentTarget.style.color = 'var(--color-text-secondary)';
+                  }}
+                >
+                  <ShrinkOutlined /> Back to Chat
+                </div>
               </div>
             </>
           ) : (
@@ -513,9 +514,7 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
 
       {/* Search */}
       <div style={{
-        padding: '12px',
-        maxWidth: expanded ? 600 : '100%',
-        margin: expanded ? '0 auto' : undefined,
+        padding: expanded ? '12px 24px' : '12px',
         width: '100%',
         transition: 'all 0.3s ease',
       }}>
@@ -592,6 +591,41 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
         {expanded ? (
           // GRID VIEW (Discovery Mode)
           <div className="animate-fade-in">
+            {/* Favorites Section */}
+            {favoriteAgents.length > 0 && (
+              <div style={{ marginBottom: 32 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 16,
+                  paddingBottom: 8,
+                  borderBottom: '1px solid var(--color-border)',
+                }}>
+                  <StarFilled style={{ fontSize: 20, color: 'var(--color-primary)' }} />
+                  <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)' }}>Favorites</span>
+                  <span style={{ fontSize: 14, color: 'var(--color-text-tertiary)' }}>({favoriteAgents.length})</span>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                  gap: 16,
+                }}>
+                  {favoriteAgents.map((agent) => (
+                    <AgentTile
+                      key={agent.id}
+                      agent={agent}
+                      onToggle={() => toggleAgent(agent.id)}
+                      onToggleFavorite={() => toggleAgentFavorite(agent.id)}
+                      onRequestAccess={() => { }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Categories */}
             {categories.map((category) => {
               const categoryAgents = agentsByCategory[category];
               if (categoryAgents.length === 0) return null;

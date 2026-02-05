@@ -755,6 +755,7 @@ const ChatPage = () => {
                       ref={fileInputRef}
                       hidden
                       multiple
+                      accept="image/*,.pdf,application/pdf"
                       onChange={handleFileSelect}
                     />
                     <Button
