@@ -13,6 +13,7 @@
     "@ant-design/icons": "^6.1.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "antd": "^6.2.2",
+    "framer-motion": "^12.31.0",
     "katex": "^0.16.28",
     "mermaid": "^11.12.2",
     "postprocessing": "^6.38.2",

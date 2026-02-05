@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { message } from 'antd';
+import { motion, AnimatePresence } from 'framer-motion';
+import { SplashBackground } from '../components/SplashBackground';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -39,22 +41,33 @@ export default function LoginPage() {
 
     return (
         <div className="login-page">
-            {/* Background decoration */}
-            <div className="login-bg-decoration" />
+            <SplashBackground />
 
-            <div className="login-container">
-                {/* Logo */}
-                <div className="login-logo">
-                    <div className="login-logo-icon">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                        </svg>
-                    </div>
-                    <h1 className="login-title">Shunya Chat</h1>
-                    <p className="login-subtitle">Your AI-powered workspace</p>
+            <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut", delay: 0.5 }}
+                className="glass-card"
+            >
+                <div className="login-header">
+                    <motion.h1
+                        className="shunya-logo-text"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 1, delay: 0.8 }}
+                    >
+                        Shunya
+                    </motion.h1>
+                    <motion.p
+                        className="login-subtitle"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 1, delay: 1.2 }}
+                    >
+                        Enter the Void. Speak to Intelligence.
+                    </motion.p>
                 </div>
 
-                {/* Form */}
                 <form className="login-form" onSubmit={handleSubmit}>
                     <div className="login-tabs">
                         <button
@@ -73,67 +86,75 @@ export default function LoginPage() {
                         </button>
                     </div>
 
-                    {isSignup && (
-                        <div className="login-field">
-                            <label htmlFor="name">Name</label>
-                            <input
-                                id="name"
-                                type="text"
-                                placeholder="Your name"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                autoComplete="name"
-                            />
-                        </div>
-                    )}
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={isSignup ? 'signup' : 'login'}
+                            initial={{ opacity: 0, x: isSignup ? 20 : -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: isSignup ? -20 : 20 }}
+                            transition={{ duration: 0.3 }}
+                        >
+                            {isSignup && (
+                                <div className="input-group">
+                                    <label className="input-label" htmlFor="name">Name</label>
+                                    <input
+                                        id="name"
+                                        className="shunya-input"
+                                        type="text"
+                                        placeholder="Your name"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        autoComplete="name"
+                                    />
+                                </div>
+                            )}
 
-                    <div className="login-field">
-                        <label htmlFor="email">Email</label>
-                        <input
-                            id="email"
-                            type="email"
-                            placeholder="you@example.com"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                            autoComplete="email"
-                        />
-                    </div>
+                            <div className="input-group">
+                                <label className="input-label" htmlFor="email">Email</label>
+                                <input
+                                    id="email"
+                                    className="shunya-input"
+                                    type="email"
+                                    placeholder="you@example.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    autoComplete="email"
+                                />
+                            </div>
 
-                    <div className="login-field">
-                        <label htmlFor="password">Password</label>
-                        <input
-                            id="password"
-                            type="password"
-                            placeholder="••••••••"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            minLength={6}
-                            autoComplete={isSignup ? 'new-password' : 'current-password'}
-                        />
-                    </div>
+                            <div className="input-group">
+                                <label className="input-label" htmlFor="password">Password</label>
+                                <input
+                                    id="password"
+                                    className="shunya-input"
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    minLength={6}
+                                    autoComplete={isSignup ? 'new-password' : 'current-password'}
+                                />
+                            </div>
+                        </motion.div>
+                    </AnimatePresence>
 
                     <button
                         type="submit"
-                        className="login-button"
+                        className="shunya-button"
                         disabled={isLoading}
                     >
                         {isLoading ? (
-                            <span className="login-loading">
+                            <div className="loading-dots">
                                 <span></span><span></span><span></span>
-                            </span>
+                            </div>
                         ) : (
-                            isSignup ? 'Create Account' : 'Sign In'
+                            isSignup ? 'Begin Journey' : 'Enter Void'
                         )}
                     </button>
                 </form>
-
-                {/* Footer */}
-                <p className="login-footer">
-                    Powered by AI agents and Supabase
-                </p>
-            </div>
+            </motion.div>
         </div>
     );
 }

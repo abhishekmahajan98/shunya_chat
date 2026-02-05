@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoadingSplash } from './components/LoadingSplash';
 import ChatPage from './pages/ChatPage';
 import SpacesPage from './pages/SpacesPage';
 import SettingsPage from './pages/SettingsPage';
@@ -11,21 +13,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'var(--color-bg)'
-      }}>
-        <div className="typing-dots">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   if (!isAuthenticated) {
@@ -40,21 +28,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'var(--color-bg)'
-      }}>
-        <div className="typing-dots">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   if (isAuthenticated) {
@@ -96,10 +70,29 @@ function AppRoutes() {
   );
 }
 
+function AppContent() {
+  const { isLoading } = useAuth();
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500); // 2.5s minimum splash
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading || showSplash) {
+    return <LoadingSplash />;
+  }
+
+  return <AppRoutes />;
+}
+
 function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <AppContent />
     </AuthProvider>
   );
 }
