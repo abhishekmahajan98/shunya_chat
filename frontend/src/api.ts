@@ -36,6 +36,7 @@ export interface MessageOut {
     content: string;
     created_at: string;
     attachments?: { id: string; name: string; type: string; url: string; size: number }[];
+    reasoning?: { steps: { id: string; text: string; status: 'pending' | 'running' | 'complete' }[]; isExpanded?: boolean };
 }
 
 export interface ConversationDetail {
@@ -51,11 +52,14 @@ export interface ConversationDetail {
  * Get available models from the backend.
  */
 export async function getModels(): Promise<ModelInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/models`);
+    const response = await fetch(`${API_BASE_URL}/api/models`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch models');
     }
     return response.json();
+
 }
 
 /**
@@ -70,6 +74,7 @@ export async function sendMessage(
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            ...getAuthHeaders(),
         },
         body: JSON.stringify({
             model,

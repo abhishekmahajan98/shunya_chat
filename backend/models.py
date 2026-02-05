@@ -45,6 +45,7 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     attachments: Optional[list[Attachment]] = None
+    reasoning: Optional[dict] = None
 
 
 class ConversationDetail(BaseModel):

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Dropdown, message, Popconfirm } from 'antd';
+import { Button, Input, Dropdown, message, Popconfirm, Skeleton } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   PlusOutlined,
@@ -494,45 +494,54 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         display: (sidebarTab === 'chats' || collapsed) ? 'block' : 'none',
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {conversations.map(chat => (
-            <div
-              key={chat.id}
-              onClick={() => loadConversation(chat.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 10px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                background: conversationId === chat.id ? 'var(--color-sidebar-active)' : 'transparent',
-                borderLeft: conversationId === chat.id ? '2px solid var(--color-primary)' : '2px solid transparent',
-                marginLeft: -2,
-              }}
-              onMouseEnter={(e) => {
-                if (conversationId !== chat.id) e.currentTarget.style.background = 'var(--color-sidebar-hover)';
-              }}
-              onMouseLeave={(e) => {
-                if (conversationId !== chat.id) e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <MessageOutlined style={{ fontSize: 16, color: conversationId === chat.id ? 'var(--color-primary)' : 'var(--color-text-tertiary)' }} />
-              {!collapsed && (
-                <span style={{
-                  flex: 1,
-                  fontSize: 14,
-                  color: conversationId === chat.id ? 'var(--color-text)' : 'var(--color-text-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {chat.title || 'New Chat'}
-                </span>
-              )}
-            </div>
-          ))}
-          {conversations.length === 0 && !collapsed && (
+          {isLoadingHistory && conversations.length === 0 ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Skeleton.Button active size="small" style={{ width: 140, height: 16, borderRadius: 4 }} block={false} />
+                <Skeleton.Button active size="small" style={{ width: 80, height: 12, borderRadius: 4 }} block={false} />
+              </div>
+            ))
+          ) : (
+            conversations.map(chat => (
+              <div
+                key={chat.id}
+                onClick={() => loadConversation(chat.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  background: conversationId === chat.id ? 'var(--color-sidebar-active)' : 'transparent',
+                  borderLeft: conversationId === chat.id ? '2px solid var(--color-primary)' : '2px solid transparent',
+                  marginLeft: -2,
+                }}
+                onMouseEnter={(e) => {
+                  if (conversationId !== chat.id) e.currentTarget.style.background = 'var(--color-sidebar-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  if (conversationId !== chat.id) e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <MessageOutlined style={{ fontSize: 16, color: conversationId === chat.id ? 'var(--color-primary)' : 'var(--color-text-tertiary)' }} />
+                {!collapsed && (
+                  <span style={{
+                    flex: 1,
+                    fontSize: 14,
+                    color: conversationId === chat.id ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {chat.title || 'New Chat'}
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+          {!isLoadingHistory && conversations.length === 0 && !collapsed && (
             <div style={{ padding: '8px 12px', color: 'var(--color-text-tertiary)', fontSize: 13, fontStyle: 'italic' }}>
               No recent chats
             </div>

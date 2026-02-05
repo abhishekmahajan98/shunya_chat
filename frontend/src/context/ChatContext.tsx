@@ -563,11 +563,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
             // Map API messages to UI messages
             const uiMessages: Message[] = data.messages.map(msg => ({
                 id: msg.id,
-                type: 'sync', // Assuming sync for history messages
+                type: msg.reasoning ? 'reasoning' : 'sync',
                 sender: msg.role === 'user' ? 'user' : 'assistant',
                 content: msg.content,
                 timestamp: new Date(msg.created_at),
                 attachments: msg.attachments as any,
+                reasoning: msg.reasoning,
             }));
 
             setMessages(uiMessages);
@@ -584,7 +585,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Load history on mount
     useEffect(() => {
         if (isAuthenticated) {
-            refreshHistory();
+            // Small delay to ensure token is fully persisted in localStorage
+            const timer = setTimeout(() => {
+                refreshHistory();
+            }, 100);
+            return () => clearTimeout(timer);
         }
     }, [isAuthenticated]);
 

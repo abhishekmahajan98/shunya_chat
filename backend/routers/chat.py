@@ -366,7 +366,8 @@ async def get_conversation(conversation_id: str, user_id: Optional[str] = Depend
                 role=msg["role"],
                 content=msg["content"],
                 created_at=msg["created_at"],
-                attachments=msg.get("attachments")  # Include attachments
+                attachments=msg.get("attachments"),
+                reasoning=msg.get("reasoning")
             )
             for msg in messages_result.data
         ],
@@ -499,6 +500,7 @@ async def send_message_with_agents(request: MessageCreate, background_tasks: Bac
                             synthesis_prompt = node_output.get("synthesis_prompt", "")
             
             # Stream the synthesis response in real-time
+            thinking_content = ""
             if collected_results:
                 from agents.synthesizer import stream_synthesize
                 
@@ -512,6 +514,8 @@ async def send_message_with_agents(request: MessageCreate, background_tasks: Bac
                     yield f"data: {json.dumps(chunk)}\n\n"
                     if chunk["type"] == "text":
                         final_response += chunk["content"]
+                    elif chunk["type"] == "thinking":
+                        thinking_content += chunk["content"]
                 
                 # Extract and stream citations
                 citations = []
@@ -545,22 +549,35 @@ async def send_message_with_agents(request: MessageCreate, background_tasks: Bac
                     message_history.append(history_msg)
                 
                 full_response = []
+                final_response = ""
                 async for chunk in provider.generate_stream(message_history, request.model):
-                    full_response.append(chunk.get("content", ""))
                     yield f"data: {json.dumps(chunk)}\n\n"
-                
-                final_response = "".join(full_response)
+                    if chunk.get("type") == "text":
+                        content = chunk.get("content", "")
+                        final_response += content
+                    elif chunk.get("type") == "thinking":
+                        thinking_content += chunk.get("content", "")
+
             
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             
             # Store the complete response
             if final_response:
+                reasoning_data = {
+                    "steps": [{
+                        "id": "1",
+                        "text": thinking_content,
+                        "status": "complete"
+                    }] 
+                } if thinking_content else None
+
                 assistant_message = {
                     "id": str(uuid.uuid4()),
                     "conversation_id": conversation["id"],
                     "role": "assistant",
                     "content": final_response,
                     "created_at": datetime.utcnow().isoformat(),
+                    "reasoning": reasoning_data,
                 }
                 supabase.table("messages").insert(assistant_message).execute()
                 
