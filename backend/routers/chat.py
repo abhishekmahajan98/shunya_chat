@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header, Depends, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from config import settings, AVAILABLE_MODELS, ModelInfo, get_model_info, AgentModels
 import json
 import uuid
 from datetime import datetime
@@ -12,9 +13,6 @@ from models import (
     ConversationSummary,
     ConversationDetail,
     MessageOut,
-    AVAILABLE_MODELS,
-    ModelInfo,
-    get_model_info,
 )
 from providers import GeminiProvider, AnthropicProvider
 
@@ -58,15 +56,20 @@ def get_anthropic_provider():
 
 
 async def generate_title(conversation_id: str, content: str):
-    """Generate a short title using Gemini Flash."""
+    """Generate a short title using the configured model."""
     try:
-        provider = get_gemini_provider()
+        # Select provider based on config
+        if AgentModels.TITLE_PROVIDER == "google":
+            provider = get_gemini_provider()
+        else:
+            provider = get_anthropic_provider()
+            
         prompt = [
             {"role": "user", "content": f"Summarize the following message into a short, concise title (max 5-6 words) for a chat history. Do not use quotes:\n\n{content}"}
         ]
         
-        # Use Gemini Flash for speed
-        title = await provider.generate(prompt, "gemini-3-flash-preview")
+        # Use title generation model from config
+        title = await provider.generate(prompt, AgentModels.TITLE_MODEL)
         title = title.strip().strip('"').strip("'")
         
         supabase = get_supabase()
@@ -500,7 +503,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                log_debug(f"Exception: {e}")
+                # log_debug removed as it was undefined
                 yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
         return StreamingResponse(

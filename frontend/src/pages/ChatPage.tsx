@@ -25,18 +25,7 @@ import { streamMessage, type AgentStreamChunk, uploadFile } from '../api';
 const { Sider, Content } = Layout;
 
 
-interface ModelOption {
-  id: string;
-  name: string;
-  detail: string;
-}
-
-const modelOptions: ModelOption[] = [
-  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', detail: 'Fast & efficient' },
-  { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', detail: 'Most capable' },
-  { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', detail: 'Balanced performance' },
-  { id: 'claude-sonnet-4-5-20250929-thinking', name: 'Claude Sonnet 4.5 Thinking', detail: 'Extended reasoning' },
-];
+// No longer hardcoded - fetched from API
 
 const ChatPage = () => {
   const { theme, toggleTheme } = useTheme();
@@ -58,7 +47,28 @@ const ChatPage = () => {
   const [rightDrawerVisible, setRightDrawerVisible] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightExpanded, setRightExpanded] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(modelOptions[0]);
+
+  const [modelOptions, setModelOptions] = useState<{ id: string, name: string, detail: string }[]>([]);
+  const [selectedModel, setSelectedModel] = useState<{ id: string, name: string } | null>(null);
+
+  // Fetch models from backend on mount
+  useEffect(() => {
+    import('../api').then(({ getModels }) => {
+      getModels().then(models => {
+        const options = models.map(m => ({
+          id: m.id,
+          name: m.name,
+          detail: m.description
+        }));
+        setModelOptions(options);
+        if (options.length > 0) {
+          setSelectedModel({ id: options[0].id, name: options[0].name });
+        }
+      }).catch(err => {
+        console.error("Failed to fetch models:", err);
+      });
+    });
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
 
   // Attachments state
@@ -236,6 +246,8 @@ const ChatPage = () => {
     // We define this interface locally to match ReasoningStep but without import issues if specific props differ
     interface LocalReasoningStep { id: string; text: string; status: 'pending' | 'running' | 'complete' }
     const collectedSteps: LocalReasoningStep[] = [];
+
+    if (!selectedModel) return;
 
     try {
       await streamMessage(
@@ -888,7 +900,7 @@ const ChatPage = () => {
                           gap: 4,
                         }}
                       >
-                        <span style={{ fontSize: 13 }}>{selectedModel.name}</span>
+                        <span style={{ fontSize: 13 }}>{selectedModel?.name || 'Loading...'}</span>
                       </Button>
                     </Dropdown>
                   </div>

@@ -6,18 +6,16 @@ from google.genai.types import (
     ThinkingConfig, 
     ThinkingLevel
 )
-from dotenv import load_dotenv
+from config import settings
 from .base import LLMProvider
 from system_prompt import get_system_prompt
-
-load_dotenv()
 
 
 class GeminiProvider(LLMProvider):
     """Google Gemini API provider with Gemini 3 thinking support."""
 
     def __init__(self):
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = settings.GOOGLE_API_KEY
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not set")
         self.client = genai.Client(api_key=api_key)

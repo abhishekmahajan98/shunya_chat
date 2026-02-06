@@ -4,11 +4,9 @@ Combines agent results into a final response for the user.
 Supports both Google Gemini and Anthropic Claude models with real-time streaming.
 """
 import os
-from dotenv import load_dotenv
 from .state import AgentState
 from typing import AsyncGenerator
-
-load_dotenv()
+from config import settings
 
 SYNTHESIZER_PROMPT = """You are a helpful assistant. Based on the following agent results and the user's original question, provide a comprehensive and well-formatted response.
 
@@ -135,7 +133,7 @@ async def _stream_gemini(prompt: str, model: str) -> AsyncGenerator[dict, None]:
     from google import genai
     from google.genai.types import GenerateContentConfig, ThinkingConfig, ThinkingLevel
     
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = settings.GOOGLE_API_KEY
     client = genai.Client(api_key=api_key)
     
     # Check if model supports thinking
@@ -211,7 +209,7 @@ async def _stream_anthropic(prompt: str, model: str) -> AsyncGenerator[dict, Non
     """Stream using Anthropic Claude API."""
     import anthropic
     
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = settings.ANTHROPIC_API_KEY
     client = anthropic.AsyncAnthropic(api_key=api_key)
     
     # Check if model supports extended thinking

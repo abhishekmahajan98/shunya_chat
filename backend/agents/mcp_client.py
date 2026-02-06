@@ -8,11 +8,7 @@ from typing import Any
 from dataclasses import dataclass, field
 from fastmcp import Client
 from fastmcp.client.transports import SSETransport
-from dotenv import load_dotenv
-
 from database import get_supabase
-
-load_dotenv()
 
 # Get the backend directory for absolute paths
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

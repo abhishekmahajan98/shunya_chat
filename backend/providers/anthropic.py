@@ -1,20 +1,18 @@
 import os
 from typing import AsyncGenerator
 import anthropic
-from dotenv import load_dotenv
+from config import settings
 from .base import LLMProvider
 from system_prompt import get_system_prompt
-
-load_dotenv()
 
 
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude API provider with real-time thinking support."""
 
     def __init__(self):
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = settings.ANTHROPIC_API_KEY
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+            raise ValueError("ANTHROPIC_API_KEY must be set in config")
         # Use ASYNC client for true real-time streaming
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
         # Keep sync client for non-streaming calls

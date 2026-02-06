@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-reasoning-pro")
 
 # Create FastMCP server with HTTP transport
 mcp = FastMCP(
@@ -48,7 +49,7 @@ async def search(query: str) -> dict:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "sonar-reasoning-pro",
+                    "model": PERPLEXITY_MODEL,
                     "messages": [
                         {"role": "system", "content": "You are a helpful search assistant. Provide concise, factual answers with sources."},
                         {"role": "user", "content": query}

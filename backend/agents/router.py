@@ -5,12 +5,9 @@ Acts as a Supervisor that delegates tasks to worker agents.
 """
 import json
 import os
-from google import genai
-from dotenv import load_dotenv
 from .state import AgentState, AgentGoal
 from .mcp_client import get_mcp_client
-
-load_dotenv()
+from config import settings, AgentModels
 
 SUPERVISOR_PROMPT = """You are a Supervisor for a multi-agent system.
 Your job is to break down the user's request into high-level tasks for your available Agents.
@@ -101,26 +98,40 @@ async def supervisor_node(state: AgentState) -> dict:
     full_prompt = f"Chat History:\n{chat_history}\n\n{prompt}"
     
     try:
-        # Use Gemini Flash for fast routing decisions
-        api_key = os.getenv("GOOGLE_API_KEY")
-        client = genai.Client(api_key=api_key)
+        if AgentModels.SUPERVISOR_PROVIDER == "google":
+            from google import genai
+            api_key = settings.GOOGLE_API_KEY
+            client = genai.Client(api_key=api_key)
+            
+            response = client.models.generate_content(
+                model=AgentModels.SUPERVISOR_MODEL,
+                contents=[{"role": "user", "parts": [{"text": full_prompt}]}]
+            )
+            raw_content = response.text
+        elif AgentModels.SUPERVISOR_PROVIDER == "anthropic":
+            import anthropic
+            api_key = settings.ANTHROPIC_API_KEY
+            client = anthropic.Anthropic(api_key=api_key)
+            
+            response = client.messages.create(
+                model=AgentModels.SUPERVISOR_MODEL,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": full_prompt}]
+            )
+            raw_content = response.content[0].text
+        else:
+            raise ValueError(f"Unsupported supervisor provider: {AgentModels.SUPERVISOR_PROVIDER}")
         
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[{"role": "user", "parts": [{"text": full_prompt}]}]
-        )
+        # Clean up Markdown formatting if present
+        json_str = raw_content.strip()
+        if "```json" in json_str:
+            json_str = json_str.split("```json")[1].split("```")[0].strip()
+        elif "```" in json_str:
+            json_str = json_str.split("```")[1].split("```")[0].strip()
         
-        # Parse JSON response
-        response_text = response.text.strip()
-        # Handle markdown code blocks
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
+        plan_data = json.loads(json_str)
         
-        decision = json.loads(response_text)
-        
-        plan = decision.get("plan", [])
+        plan = plan_data.get("plan", [])
         
         # Filter: Ensure we only use agents the user actually activated
         # This prevents the LLM from hallucinating agents or bypassing user settings
@@ -134,7 +145,7 @@ async def supervisor_node(state: AgentState) -> dict:
 
         return {
             "active_agents": valid_plan,
-            "execution_mode": decision.get("mode", "sequential")
+            "execution_mode": plan_data.get("mode", "sequential")
         }
         
     except Exception as e:

@@ -5,13 +5,13 @@ Orchestrates a Supervisor (Router) and Worker Agents (ReAct loops).
 import os
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .state import AgentState
-from .router import supervisor_node  # Updated import
+from .router import supervisor_node
 from .synthesizer import synthesizer_node
 from .mcp_client import get_mcp_client
+from config import settings, AgentModels
 
 
 async def mcp_executor_node(state: AgentState) -> dict:
@@ -32,16 +32,28 @@ async def mcp_executor_node(state: AgentState) -> dict:
     results = []
     
     # Shared LLM for all workers
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = settings.GOOGLE_API_KEY
     if not api_key:
-         return {"agent_results": [{"agent": "system", "error": "Internal Error: GOOGLE_API_KEY not set."}]}
+         return {"agent_results": [{"agent": "system", "error": "Internal Error: GOOGLE_API_KEY not set in config."}]}
 
     try:
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature=0,
-            google_api_key=api_key
-        )
+        if AgentModels.EXECUTOR_PROVIDER == "google":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(
+                model=AgentModels.EXECUTOR_MODEL,
+                temperature=0,
+                google_api_key=api_key
+            )
+        elif AgentModels.EXECUTOR_PROVIDER == "anthropic":
+            from langchain_anthropic import ChatAnthropic
+            anthropic_api_key = settings.ANTHROPIC_API_KEY
+            llm = ChatAnthropic(
+                model=AgentModels.EXECUTOR_MODEL,
+                temperature=0,
+                anthropic_api_key=anthropic_api_key
+            )
+        else:
+            raise ValueError(f"Unsupported executor provider: {AgentModels.EXECUTOR_PROVIDER}")
     except Exception as e:
         return {"agent_results": [{"agent": "system", "error": f"LLM Init Failed: {str(e)}"}]}
 
