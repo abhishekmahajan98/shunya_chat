@@ -65,11 +65,24 @@ def _format_history(messages: list) -> str:
     return "\n".join(formatted)
 
 
-async def supervisor_node(state: AgentState) -> dict:
+from langchain_core.runnables import RunnableConfig
+
+async def supervisor_node(state: AgentState, config: RunnableConfig) -> dict:
     """
     Supervisor Node (formerly Router).
     Decides which agents to use and gives them specific goals.
     """
+    # Get queue if available for streaming progress
+    queue = config.get("configurable", {}).get("queue")
+    
+    # Emit planning start event
+    if queue:
+        await queue.put({
+            "type": "status",
+            "content": "Analyzing your request..."
+        })
+        import asyncio
+        await asyncio.sleep(0.01)
     # Use full history to resolve context
     chat_history = _format_history(state["messages"])
     last_message = state["messages"][-1]
@@ -137,11 +150,20 @@ async def supervisor_node(state: AgentState) -> dict:
         # This prevents the LLM from hallucinating agents or bypassing user settings
         valid_plan = []
         if user_active_agents is not None:
-             for step in plan:
+             for i, step in enumerate(plan):
                  if step["agent"] in user_active_agents:
+                     step["id"] = f"step-{i+1}"
                      valid_plan.append(step)
         else:
-            valid_plan = plan
+            for i, step in enumerate(plan):
+                step["id"] = f"step-{i+1}"
+                valid_plan.append(step)
+
+        if queue:
+             await queue.put({
+                "type": "status",
+                "content": "Plan created."
+            })
 
         return {
             "active_agents": valid_plan,

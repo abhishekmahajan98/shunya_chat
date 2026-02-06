@@ -356,156 +356,188 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
         }
 
         async def generate_agent_stream():
-            try:
-                # Send conversation_id first
-                yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
-                
-                # Get the agent graph
-                graph = get_agent_graph()
-                
-                # Stream through the graph
-                final_response = ""
-                active_agents = []
-                collected_results = []
-                
-                async for event in graph.astream(initial_state, stream_mode="updates"):
-                    for node_name, node_output in event.items():
-                        if node_output is None:
-                            continue
-                        
-                        # Send agent status updates
-                        if node_name == "router":
-                            active_agents = node_output.get("active_agents", [])
-                            if active_agents:
-                                # Stream the full plan
-                                yield f"data: {json.dumps({'type': 'plan_created', 'plan': active_agents})}\n\n"
-                                
-                                from agents.mcp_client import get_mcp_client
-                                mcp_client = get_mcp_client()
-                                
-                                for step in active_agents:
-                                    agent_id = step.get("agent", "unknown")
-                                    # Fetch name if possible, or use ID
-                                    server_config = mcp_client.get_server_by_id(agent_id)
-                                    agent_name = server_config.name if server_config else agent_id
-                                    
-                                    # Notify UI that this agent is part of the plan (initially 'pending')
-                                    yield f"data: {json.dumps({'type': 'agent_status', 'agent': agent_id, 'name': agent_name, 'goal': step.get('goal'), 'status': 'pending'})}\n\n"
-                        
-                        elif node_name == "executor":
-                            # MCP executor completed
-                            results = node_output.get("agent_results", [])
-                            for result in results:
-                                collected_results.append(result)
-                                
-                                status = 'success'
-                                data = result.get('result')
-                                
-                                if result.get('error'):
-                                    status = 'error'
-                                    data = result.get('error')
-                                    
-                                yield f"data: {json.dumps({'type': 'agent_result', 'agent': result.get('agent', 'unknown'), 'goal': result.get('goal'), 'status': status, 'data': data})}\n\n"
-                                
-                                # Stream citations discovered by the agent
-                                if result.get('citations'):
-                                    citation_list = []
-                                    for i, url in enumerate(result['citations']):
-                                        citation_list.append({
-                                            "id": f"agent-{result.get('agent', 'unknown')}-{i+1}",
-                                            "title": url,
-                                            "url": url
-                                        })
-                                    yield f"data: {json.dumps({'type': 'citations', 'citations': citation_list})}\n\n"
-                        
-                        elif node_name == "synthesizer":
-                            # Check if synthesis is needed
-                            needs_synthesis = node_output.get("needs_synthesis", False)
-                            if needs_synthesis:
-                                # Stream synthesis response
-                                from agents.synthesizer import stream_synthesize, _build_prompt
-                                
-                                prompt = _build_prompt(collected_results, request.content)
-                                thinking_content = ""
-                                
-                                async for chunk in stream_synthesize(prompt, request.model):
-                                    yield f"data: {json.dumps(chunk)}\n\n"
-                                    if chunk["type"] == "text":
-                                        final_response += chunk["content"]
-                                    elif chunk["type"] == "thinking":
-                                        thinking_content += chunk["content"]
-                
-                # Fallback if no agents were triggered
-                if not collected_results and not final_response:
-                     # 1. Fetch message history
-                     messages_result = supabase.table("messages")\
-                        .select("*")\
-                        .eq("conversation_id", conversation["id"])\
-                        .order("created_at")\
-                        .execute()
+            import asyncio
+            stream_queue = asyncio.Queue()
+
+            async def run_graph_background(): 
+                try:
+                    graph = get_agent_graph()
                     
-                     message_history = []
-                     for msg in messages_result.data:
-                        history_msg = {"role": msg["role"], "content": msg["content"]}
-                        if msg.get("attachments"):
-                            history_msg["attachments"] = msg["attachments"]
-                        message_history.append(history_msg)
-                        
-                     # 2. Get provider
-                     # Note: we are inside generate_agent_stream, need to ensure imports/functions available
-                     # model_info is available from outer scope
-                     if model_info.provider == "google":
-                        provider = get_gemini_provider()
-                     else:
-                        provider = get_anthropic_provider()
-                        
-                     # 3. Stream
-                     fallback_text = ""
-                     fallback_thinking = ""
-                     
-                     async for chunk in provider.generate_stream(message_history, request.model):
-                        if chunk.get("type") == "text":
-                            fallback_text += chunk.get("content", "")
-                        elif chunk.get("type") == "thinking":
-                            fallback_thinking += chunk.get("content", "")
+                    async for event in graph.astream(initial_state, stream_mode="updates", config={"configurable": {"queue": stream_queue}}):
+                         for node_name, node_output in event.items():
+                            if node_output is None:
+                                continue
                             
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                        
-                     final_response = fallback_text
-                     # Update thinking content if any
-                     if fallback_thinking:
-                         thinking_content = fallback_thinking
+                            if node_name == "router":
+                                active_agents = node_output.get("active_agents", [])
+                                if active_agents:
+                                    await stream_queue.put({
+                                        "type": "plan_created", 
+                                        "plan": active_agents
+                                    })
+                                    
+                                    from agents.mcp_client import get_mcp_client
+                                    mcp_client = get_mcp_client()
+                                    
+                                    for step in active_agents:
+                                        agent_id = step.get("agent", "unknown")
+                                        server_config = mcp_client.get_server_by_id(agent_id)
+                                        agent_name = server_config.name if server_config else agent_id
+                                        
+                                        await stream_queue.put({
+                                            "type": "agent_status",
+                                            "agent": agent_id,
+                                            "name": agent_name,
+                                            "goal": step.get('goal'),
+                                            "status": "pending"
+                                        })
 
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                            elif node_name == "executor":
+                                results = node_output.get("agent_results", [])
+                                for result in results:
+                                    status = 'success'
+                                    data = result.get('result')
+                                    if result.get('error'):
+                                        status = 'error'
+                                        data = result.get('error')
+                                        
+                                    await stream_queue.put({
+                                        "type": "agent_result", 
+                                        "agent": result.get('agent', 'unknown'), 
+                                        "goal": result.get('goal'), 
+                                        "status": status, 
+                                        "data": data
+                                    })
+                                    
+                                    if result.get('citations'):
+                                        citation_list = []
+                                        for i, url in enumerate(result['citations']):
+                                            citation_list.append({
+                                                "id": f"agent-{result.get('agent', 'unknown')}-{i+1}",
+                                                "title": url,
+                                                "url": url
+                                            })
+                                        await stream_queue.put({
+                                            "type": "citations", 
+                                            "citations": citation_list
+                                        })
 
+                            elif node_name == "synthesizer":
+                                needs_synthesis = node_output.get("needs_synthesis", False)
+                                if needs_synthesis:
+                                    synthesis_prompt = node_output.get("synthesis_prompt")
+                                    from agents.synthesizer import stream_synthesize
+                                    
+                                    async for chunk in stream_synthesize(synthesis_prompt, request.model):
+                                        await stream_queue.put(chunk)
+                                        # Also accumulate for saving to DB later if needed (handled by state update usually, but here we stream)
+                                        # But wait, we need to return the final text to the outer loop or state?
+                                        # The outer loop is just consuming queue.
+                                        # We need to capture final response for DB storage.
+                                        if chunk["type"] == "text":
+                                           # We can't easily pass variable back to main scope from here without a mutable object or queue trick.
+                                           # Actually, we can put a special "final_text_accumulator" event or just rely on the consumer to rebuild it?
+                                           # Or simpler: accumulate here and send a final internal event.
+                                           await stream_queue.put({"type": "internal_accumulate", "content": chunk["content"]})
+                                        elif chunk["type"] == "thinking":
+                                           await stream_queue.put({"type": "internal_accumulate_thinking", "content": chunk["content"]})
+
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    await stream_queue.put({"type": "error", "error": str(e)})
+                finally:
+                    await stream_queue.put(None)
+
+            asyncio.create_task(run_graph_background())
+            
+            yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
+            
+            thinking_content = ""
+            final_response = ""
+            collected_results = []
+            
+            while True:
+                item = await stream_queue.get()
+                if item is None:
+                    break
                 
-                # Store message
-                if final_response:
-                    thinking_content = locals().get('thinking_content', "")
-                    reasoning_data = {
-                        "steps": [{
-                            "id": "1",
-                            "text": thinking_content,
-                            "status": "complete"
-                        }] 
-                    } if thinking_content else None
-
-                    assistant_message = {
-                        "id": str(uuid.uuid4()),
-                        "conversation_id": conversation["id"],
-                        "role": "assistant",
-                        "content": final_response,
-                        "created_at": datetime.utcnow().isoformat(),
-                        "reasoning": reasoning_data,
-                    }
-                    supabase.table("messages").insert(assistant_message).execute()
+                # Handle internal signals that shouldn't go to frontend
+                if item.get("type") == "internal_accumulate":
+                    final_response += item.get("content", "")
+                    continue
+                elif item.get("type") == "internal_accumulate_thinking":
+                    thinking_content += item.get("content", "")
+                    continue
+                
+                # Track results for fallback logic
+                if item.get("type") == "agent_result":
+                    collected_results.append(item)
                     
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                # log_debug removed as it was undefined
-                yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+                yield f"data: {json.dumps(item)}\n\n"
+            
+            # Fallback if no agents were triggered
+            if not collected_results and not final_response:
+                 # 1. Fetch message history
+                 messages_result = supabase.table("messages")\
+                    .select("*")\
+                    .eq("conversation_id", conversation["id"])\
+                    .order("created_at")\
+                    .execute()
+                
+                 message_history = []
+                 for msg in messages_result.data:
+                    history_msg = {"role": msg["role"], "content": msg["content"]}
+                    if msg.get("attachments"):
+                        history_msg["attachments"] = msg["attachments"]
+                    message_history.append(history_msg)
+                    
+                 # 2. Get provider
+                 if model_info.provider == "google":
+                    provider = get_gemini_provider()
+                 else:
+                    provider = get_anthropic_provider()
+                    
+                 # 3. Stream
+                 fallback_text = ""
+                 fallback_thinking = ""
+                 
+                 async for chunk in provider.generate_stream(message_history, request.model):
+                    if chunk.get("type") == "text":
+                        fallback_text += chunk.get("content", "")
+                    elif chunk.get("type") == "thinking":
+                        fallback_thinking += chunk.get("content", "")
+                        
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    
+                 final_response = fallback_text
+                 # Update thinking content if any
+                 if fallback_thinking:
+                     thinking_content = fallback_thinking
 
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+            # Store message
+            if final_response:
+                thinking_content = locals().get('thinking_content', "")
+                reasoning_data = {
+                    "steps": [{
+                        "id": "1",
+                        "text": thinking_content,
+                        "status": "complete"
+                    }] 
+                } if thinking_content else None
+
+                assistant_message = {
+                    "id": str(uuid.uuid4()),
+                    "conversation_id": conversation["id"],
+                    "role": "assistant",
+                    "content": final_response,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "reasoning": reasoning_data,
+                }
+                supabase.table("messages").insert(assistant_message).execute()
+                
         return StreamingResponse(
             generate_agent_stream(),
             media_type="text/event-stream",

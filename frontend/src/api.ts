@@ -150,18 +150,20 @@ export interface AgentResult {
 }
 
 export interface AgentStreamChunk {
-    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result' | 'citations' | 'plan_created';
+    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result' | 'citations' | 'plan_created' | 'status';
     content?: string;
     conversation_id?: string;
     // Agent-specific fields
     agent?: string;
     name?: string;
+    id?: string;        // Unique step ID
+    parent_id?: string; // Parent ID for hiearchy
     status?: string; // 'starting' | 'running' | 'complete' | 'error' | 'pending'
     goal?: string;   // For agent_status and plan
     data?: any;
     citations?: { id: string; title: string; page?: number }[];
     // Plan
-    plan?: { agent: string; goal: string }[];
+    plan?: { agent: string; goal: string; id?: string }[];
 }
 
 // Agent Registry Types

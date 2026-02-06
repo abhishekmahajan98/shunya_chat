@@ -14,7 +14,9 @@ from .mcp_client import get_mcp_client
 from config import settings, AgentModels
 
 
-async def mcp_executor_node(state: AgentState) -> dict:
+from langchain_core.runnables import RunnableConfig
+
+async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
     """
     Worker Factory & Executor.
     Iterates through the Supervisor's plan (active_agents list of goals).
@@ -25,6 +27,9 @@ async def mcp_executor_node(state: AgentState) -> dict:
     """
     active_goals = state.get("active_agents", [])
     mcp_client = get_mcp_client()
+    
+    # Get queue if available for streaming progress
+    queue = config.get("configurable", {}).get("queue")
     
     if not active_goals:
         return {"agent_results": []}
@@ -70,6 +75,21 @@ async def mcp_executor_node(state: AgentState) -> dict:
     for step in active_goals:
         agent_name = step["agent"]
         goal = step["goal"]
+        step_id = step.get("id") # Unique ID from router (e.g. step-1)
+        
+        # Emit start event
+        if queue:
+            await queue.put({
+                "type": "agent_status",
+                "id": step_id, # Emitting the unique plan ID
+                "agent": agent_name,
+                "name": agent_name, # ideally we get real name
+                "goal": goal,
+                "status": "running"
+            })
+            # Force yield to allow stream consumer to flush update
+            import asyncio
+            await asyncio.sleep(0.01)
         
         try:
             # 1. Get Tools for this Agent
@@ -98,7 +118,15 @@ async def mcp_executor_node(state: AgentState) -> dict:
             """
     
             # 4. Invoke the worker
-            worker_response = await worker_agent.ainvoke({"messages": [HumanMessage(content=worker_input)]})
+            # Attach callback handler to stream real-time tool usage
+            from .callbacks import AgentCallbackHandler
+            # Pass step_id so tool events can be nested under this step
+            callback = AgentCallbackHandler(queue, agent_name, parent_id=step_id)
+            
+            worker_response = await worker_agent.ainvoke(
+                {"messages": [HumanMessage(content=worker_input)]},
+                config={"callbacks": [callback]}
+            )
             
             # 5. Extract result
             final_message = worker_response["messages"][-1]
@@ -118,6 +146,24 @@ async def mcp_executor_node(state: AgentState) -> dict:
             })
             context += f"\n- {agent_name} found: {step_result}"
             
+            # Emit complete event
+            if queue:
+                await queue.put({
+                    "type": "agent_status",
+                    "id": step_id,
+                    "agent": agent_name,
+                    "name": agent_name,
+                    "goal": goal,
+                    "status": "complete"
+                })
+                # Also emit agent_result for the "✓" markers
+                await queue.put({
+                    "type": "agent_result",
+                    "id": step_id,
+                    "agent": agent_name,
+                    "data": step_result
+                })
+            
         except Exception as e:
             # Catch worker failures properly
             import traceback
@@ -127,6 +173,17 @@ async def mcp_executor_node(state: AgentState) -> dict:
                 "goal": goal,
                 "error": f"Execution failed: {str(e)}"
             })
+            
+            # Emit error event
+            if queue:
+                await queue.put({
+                    "type": "agent_status",
+                    "agent": agent_name,
+                    "name": agent_name,
+                    "goal": goal,
+                    "status": "failed",
+                    "error": str(e)
+                })
     
     return {"agent_results": results}
 

@@ -256,41 +256,143 @@ const ChatPage = () => {
         (chunk: AgentStreamChunk) => {
           if (chunk.type === 'meta' && chunk.conversation_id) {
             setConversationId(chunk.conversation_id);
+          } else if (chunk.type === 'status') {
+            // General status update from Router/System
+            const stepId = 'system-planning';
+            const stepText = chunk.content || 'Processing...';
+
+            const existingStepIndex = collectedSteps.findIndex(s => s.id === stepId);
+            if (existingStepIndex >= 0) {
+              collectedSteps[existingStepIndex] = { ...collectedSteps[existingStepIndex], text: stepText, status: 'running' };
+            } else {
+              // Insert at start
+              collectedSteps.unshift({ id: stepId, text: stepText, status: 'running' });
+            }
+
+            updateMessage(assistantMsgId, {
+              type: 'reasoning',
+              reasoning: { steps: [...collectedSteps], isExpanded: true }
+            });
+
+          } else if (chunk.type === 'plan_created') {
+            // Initialize agent steps based on plan
+            const plan = chunk.plan || [];
+
+            // Mark system planning as complete if it exists
+            const sysIdx = collectedSteps.findIndex(s => s.id === 'system-planning');
+            if (sysIdx >= 0) {
+              collectedSteps[sysIdx] = { ...collectedSteps[sysIdx], status: 'complete', text: 'Plan created' };
+            }
+
+            plan.forEach(step => {
+              const agentId = step.agent;
+              // Use unique ID from backend if available, fallback to agent name
+              const stepId = step.id || `agent-${agentId}`;
+              // Try to find name from activeAgents or use ID
+              // We don't have full agent info here easily unless we lookup.
+              // chunk.plan objects might just have agent/goal.
+              // We'll use ID/Goal for now.
+              const stepText = `${agentId}: ${step.goal}`;
+
+              if (!collectedSteps.find(s => s.id === stepId)) {
+                collectedSteps.push({
+                  id: stepId,
+                  text: stepText,
+                  status: 'pending'
+                });
+              }
+            });
+
+            updateMessage(assistantMsgId, {
+              type: 'reasoning',
+              pending: false,
+              reasoning: { steps: [...collectedSteps], isExpanded: true }
+            });
+
           } else if (chunk.type === 'agent_status') {
             // Agent status update (Plan execution)
             const agentName = chunk.name || chunk.agent || '';
-            const goal = chunk.goal;
+            const goal = chunk.goal || '';
             const status = chunk.status as 'pending' | 'running' | 'complete' | 'error';
 
-            // Add to active agents list if not present
-            if (chunk.agent && !collectedAgents.includes(chunk.agent)) {
-              collectedAgents.push(chunk.agent);
-            }
+            // Use unique ID from backend if available for plan steps
+            const planStepId = chunk.id || `agent-${chunk.agent}`;
+            const parentId = chunk.parent_id;
 
-            // Map agent action to a Reasoning Step
-            const stepId = `agent-${chunk.agent}`;
-            const stepText = goal ? `${agentName}: ${goal}` : `${agentName} working...`;
+            // Check if this is a Tool Execution Event 
+            const isToolEvent = !!parentId || goal.startsWith('Using ');
+            const isToolComplete = goal === 'Tool execution finished';
 
-            const existingStepIndex = collectedSteps.findIndex(s => s.id === stepId);
-
-            if (existingStepIndex >= 0) {
-              // Update existing step
-              collectedSteps[existingStepIndex] = {
-                ...collectedSteps[existingStepIndex],
-                status: status === 'pending' ? 'pending' : 'running',
-                text: stepText
+            if (isToolEvent) {
+              // Creates a new sub-step for the tool usage
+              const toolStepId = `tool-${chunk.agent}-${Date.now()}`;
+              const newToolStep = {
+                id: toolStepId,
+                text: goal,
+                status: 'running' as const
               };
+
+              if (parentId) {
+                // Find parent index based on the ID assigned by the router
+                const parentIdx = collectedSteps.findIndex(s => s.id === parentId);
+
+                if (parentIdx >= 0) {
+                  // Insert AFTER parent and its current children (other tools)
+                  let insertIdx = parentIdx + 1;
+                  while (insertIdx < collectedSteps.length && collectedSteps[insertIdx].id.startsWith('tool-')) {
+                    insertIdx++;
+                  }
+                  collectedSteps.splice(insertIdx, 0, newToolStep);
+                } else {
+                  // Fallback to end if parent ID mapping fails
+                  collectedSteps.push(newToolStep);
+                }
+              } else {
+                // Legacy/fallback append
+                collectedSteps.push(newToolStep);
+              }
+
+            } else if (isToolComplete) {
+              // Determine which tool step to complete
+              // Usually the latest running one for this agent
+              for (let i = collectedSteps.length - 1; i >= 0; i--) {
+                if (collectedSteps[i].id.startsWith('tool-') &&
+                  collectedSteps[i].status === 'running' &&
+                  collectedSteps[i].id.includes(`tool-${chunk.agent}`)) {
+                  collectedSteps[i] = { ...collectedSteps[i], status: 'complete' };
+                  break;
+                }
+              }
             } else {
-              // Add new step
-              collectedSteps.push({
-                id: stepId,
-                text: stepText,
-                status: status === 'pending' ? 'pending' : 'running'
-              });
+              // Normal Agent Goal Update (Plan Step)
+              if (chunk.agent && !collectedAgents.includes(chunk.agent)) {
+                collectedAgents.push(chunk.agent);
+              }
+
+              const stepText = goal ? `${agentName}: ${goal}` : `${agentName} working...`;
+              const existingStepIndex = collectedSteps.findIndex(s => s.id === planStepId);
+
+              if (existingStepIndex >= 0) {
+                // Update existing step by its unique ID
+                collectedSteps[existingStepIndex] = {
+                  ...collectedSteps[existingStepIndex],
+                  status: status === 'pending' ? 'pending' : (status === 'complete' ? 'complete' : 'running'),
+                  // Only update text for high-level goal updates
+                  text: (goal && !isToolEvent && !isToolComplete) ? stepText : collectedSteps[existingStepIndex].text
+                };
+              } else {
+                // New step (e.g. if we missed plan_created)
+                collectedSteps.push({
+                  id: planStepId,
+                  text: stepText,
+                  status: status === 'pending' ? 'pending' : 'running'
+                });
+              }
             }
 
             updateMessage(assistantMsgId, {
               agents: collectedAgents,
+              pending: false,
               type: 'reasoning',
               reasoning: {
                 steps: [...collectedSteps],
@@ -300,7 +402,7 @@ const ChatPage = () => {
 
           } else if (chunk.type === 'agent_result') {
             // Agent completed step
-            const stepId = `agent-${chunk.agent}`;
+            const stepId = chunk.id || `agent-${chunk.agent}`;
 
             const existingStepIndex = collectedSteps.findIndex(s => s.id === stepId);
 
@@ -313,6 +415,7 @@ const ChatPage = () => {
             }
 
             updateMessage(assistantMsgId, {
+              pending: false,
               reasoning: {
                 steps: [...collectedSteps],
                 isExpanded: true
@@ -326,7 +429,7 @@ const ChatPage = () => {
               type: 'reasoning',
               reasoning: {
                 // Focus on thinking content as requested by user
-                steps: [{ id: 'thinking', text: thinkingContent, status: 'running' }],
+                steps: [...collectedSteps, { id: 'thinking', text: thinkingContent, status: 'running' }],
                 isExpanded: true
               },
             });
@@ -336,8 +439,8 @@ const ChatPage = () => {
             updateMessage(assistantMsgId, {
               pending: false, // Stop loader
               content: textContent,
-              reasoning: thinkingContent ? {
-                steps: [{ id: 'thinking', text: thinkingContent, status: 'complete' }],
+              reasoning: (thinkingContent || collectedSteps.length > 0) ? {
+                steps: [...collectedSteps, ...(thinkingContent ? [{ id: 'thinking', text: thinkingContent, status: 'complete' as const }] : [])],
                 isExpanded: false // Collapse when text arrives
               } : undefined,
             });
@@ -345,11 +448,11 @@ const ChatPage = () => {
             // Use local collectedAgents
             updateMessage(assistantMsgId, {
               pending: false,
-              type: thinkingContent ? 'reasoning' : 'sync',
+              type: (thinkingContent || collectedSteps.length > 0) ? 'reasoning' : 'sync',
               content: textContent,
               agents: collectedAgents.length > 0 ? collectedAgents : undefined,
-              reasoning: thinkingContent ? {
-                steps: [{ id: 'thinking', text: thinkingContent, status: 'complete' }],
+              reasoning: (thinkingContent || collectedSteps.length > 0) ? {
+                steps: [...collectedSteps, ...(thinkingContent ? [{ id: 'thinking', text: thinkingContent, status: 'complete' as const }] : [])],
                 isExpanded: false
               } : undefined,
             });

@@ -10,6 +10,7 @@ from operator import add
 
 class AgentGoal(TypedDict):
     """A goal for a specific agent."""
+    id: str     # Unique ID for this step (e.g. 'step-1')
     agent: str  # The ID of the agent (e.g., 'search', 'finance')
     goal: str   # The high-level instruction for the worker agent
 

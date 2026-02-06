@@ -104,6 +104,93 @@ const CopyButton = ({ text }: { text: string }) => {
     );
 };
 
+// Agent Execution Display - Shows plan and tool usage clearly
+const AgentExecutionDisplay = ({ steps }: { steps: ReasoningStep[] }) => {
+    // Filter out the actual thinking/reasoning step
+    const agentSteps = steps.filter(s => s.id !== 'thinking');
+
+    if (agentSteps.length === 0) return null;
+
+    return (
+        <div style={{
+            marginBottom: 12,
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 12,
+            padding: '8px 12px'
+        }}>
+            <div style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--color-text-secondary)',
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+            }}>
+                <CheckCircleFilled style={{ color: 'var(--color-primary)' }} />
+                Agent Execution Plan
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {agentSteps.map((step, index) => {
+                    const isTool = step.id.startsWith('tool-');
+                    // Simple cleanup for tool arguments
+                    const displayText = isTool
+                        ? step.text.replace(/{'query':\s*'([^']+)'}/, '"$1"').replace(/{'query':\s*"([^"]+)"}/, '"$1"')
+                        : step.text;
+
+                    return (
+                        <div key={step.id} style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 8,
+                            fontSize: 13,
+                            paddingLeft: isTool ? 24 : 0,
+                            position: 'relative'
+                        }}>
+                            {/* Tree connector for tool items */}
+                            {isTool && (
+                                <div style={{
+                                    position: 'absolute',
+                                    left: 6,
+                                    top: -12, // Connect to previous item
+                                    bottom: 12,
+                                    width: 12,
+                                    borderLeft: '1px solid var(--color-border)',
+                                    borderBottom: '1px solid var(--color-border)',
+                                    borderBottomLeftRadius: 8
+                                }} />
+                            )}
+
+                            <div style={{ marginTop: 2, zIndex: 1, background: 'var(--color-surface)' }}>
+                                {step.status === 'running' ? (
+                                    <LoadingOutlined style={{ color: 'var(--color-primary)', fontSize: isTool ? 10 : 12 }} />
+                                ) : step.status === 'complete' ? (
+                                    <CheckOutlined style={{ color: '#52c41a', fontSize: isTool ? 10 : 12 }} />
+                                ) : (
+                                    <div style={{
+                                        width: isTool ? 8 : 12,
+                                        height: isTool ? 8 : 12,
+                                        borderRadius: '50%',
+                                        border: '2px solid var(--color-border)'
+                                    }} />
+                                )}
+                            </div>
+                            <span style={{
+                                color: step.status === 'pending' ? 'var(--color-text-tertiary)' : 'var(--color-text)',
+                                opacity: step.status === 'pending' ? 0.7 : 1,
+                                fontSize: isTool ? 12 : 13
+                            }}>
+                                {displayText}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 // Thinking Display Component - Minimal, above the bubble
 const ThinkingDisplay = ({
     steps,
@@ -116,11 +203,9 @@ const ThinkingDisplay = ({
     onToggle: () => void;
     isThinking: boolean;
 }) => {
-    // Combine all steps into a single reasoning block for display
-    const thinkingText = steps.map(s => {
-        const prefix = s.status === 'running' ? '● ' : s.status === 'complete' ? '✓ ' : '○ ';
-        return s.text ? `${prefix}${s.text}` : '';
-    }).filter(Boolean).join('\n\n');
+    // Only get the thinking step
+    const thinkingStep = steps.find(s => s.id === 'thinking');
+    if (!thinkingStep) return null;
 
     return (
         <div style={{ marginBottom: 8 }}>
@@ -155,8 +240,8 @@ const ThinkingDisplay = ({
                 )}
             </button>
 
-            {/* Thinking Content - Combined reasoning text */}
-            {isExpanded && thinkingText && (
+            {/* Thinking Content */}
+            {isExpanded && thinkingStep.text && (
                 <div
                     style={{
                         paddingLeft: 20,
@@ -166,7 +251,7 @@ const ThinkingDisplay = ({
                         color: 'var(--color-text-secondary)',
                     }}
                 >
-                    <AIResponse content={thinkingText} compact={true} />
+                    <AIResponse content={thinkingStep.text} compact={true} />
                 </div>
             )}
         </div>
@@ -395,6 +480,9 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
                 marginBottom: 12,
                 maxWidth: '75%',
             }}>
+                {/* Agent Execution Plan - ABOVE the thinking */}
+                <AgentExecutionDisplay steps={message.reasoning.steps} />
+
                 {/* Thinking display - ABOVE the message bubble, no container */}
                 <ThinkingDisplay
                     steps={message.reasoning.steps}
