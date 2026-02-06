@@ -456,7 +456,8 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             thinking_content = ""
             final_response = ""
             collected_results = []
-            
+            reasoning_steps = [] # Accumulate for DB storage
+
             while True:
                 item = await stream_queue.get()
                 if item is None:
@@ -470,15 +471,76 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                     thinking_content += item.get("content", "")
                     continue
                 
-                # Track results for fallback logic
-                if item.get("type") == "agent_result":
+                # Track for DB storage
+                item_type = item.get("type")
+                if item_type == "plan_created":
+                    # Initialize plan steps
+                    for plan_item in item.get("plan", []):
+                        reasoning_steps.append({
+                            "id": plan_item.get("id") or f"agent-{plan_item.get('agent')}",
+                            "text": f"{plan_item.get('agent')}: {plan_item.get('goal')}",
+                            "status": "pending"
+                        })
+                elif item_type == "agent_status":
+                    goal = item.get("goal", "")
+                    status = item.get("status")
+                    agent_id = item.get("agent")
+                    name = item.get("name") or agent_id
+                    parent_id = item.get("parent_id")
+                    unique_id = item.get("id") or f"agent-{agent_id}"
+
+                    is_tool = bool(parent_id) or goal.startswith("Using ")
+                    is_tool_complete = goal == "Tool execution finished"
+
+                    if is_tool:
+                        # Append tool step
+                        tool_step = {
+                            "id": f"tool-{agent_id}-{len(reasoning_steps)}",
+                            "text": goal,
+                            "status": "running"
+                        }
+                        if parent_id:
+                            # Insert after parent
+                            try:
+                                parent_idx = next(i for i, s in enumerate(reasoning_steps) if s["id"] == parent_id)
+                                insert_idx = parent_idx + 1
+                                while insert_idx < len(reasoning_steps) and reasoning_steps[insert_idx]["id"].startswith("tool-"):
+                                    insert_idx += 1
+                                reasoning_steps.insert(insert_idx, tool_step)
+                            except StopIteration:
+                                reasoning_steps.append(tool_step)
+                        else:
+                            reasoning_steps.append(tool_step)
+                    elif is_tool_complete:
+                        # Mark tool complete
+                        for s in reversed(reasoning_steps):
+                            if s["id"].startswith("tool-") and s["status"] == "running" and f"tool-{agent_id}" in s["id"]:
+                                s["status"] = "complete"
+                                break
+                    else:
+                        # Update normal agent step
+                        for s in reasoning_steps:
+                            if s["id"] == unique_id:
+                                if status: s["status"] = status
+                                if goal and not goal.startswith("Using"):
+                                    s["text"] = f"{name}: {goal}"
+                                break
+
+                elif item_type == "agent_result":
                     collected_results.append(item)
+                    unique_id = item.get("id") or f"agent-{item.get('agent')}"
+                    for s in reasoning_steps:
+                        if s["id"] == unique_id:
+                            s["status"] = "complete"
+                            if item.get("data"):
+                                s["text"] += " ✓"
+                            break
                     
                 yield f"data: {json.dumps(item)}\n\n"
             
             # Fallback if no agents were triggered
             if not collected_results and not final_response:
-                 # 1. Fetch message history
+                 # ... existing fallback logic ...
                  messages_result = supabase.table("messages")\
                     .select("*")\
                     .eq("conversation_id", conversation["id"])\
@@ -492,13 +554,11 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                         history_msg["attachments"] = msg["attachments"]
                     message_history.append(history_msg)
                     
-                 # 2. Get provider
                  if model_info.provider == "google":
                     provider = get_gemini_provider()
                  else:
                     provider = get_anthropic_provider()
-                    
-                 # 3. Stream
+                     
                  fallback_text = ""
                  fallback_thinking = ""
                  
@@ -511,7 +571,6 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                     yield f"data: {json.dumps(chunk)}\n\n"
                     
                  final_response = fallback_text
-                 # Update thinking content if any
                  if fallback_thinking:
                      thinking_content = fallback_thinking
 
@@ -519,14 +578,18 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
 
             # Store message
             if final_response:
-                thinking_content = locals().get('thinking_content', "")
-                reasoning_data = {
-                    "steps": [{
-                        "id": "1",
+                # If we have hierarchical steps, use them. 
+                # Also include thinking if it exists
+                if thinking_content:
+                    reasoning_steps.append({
+                        "id": "thinking",
                         "text": thinking_content,
                         "status": "complete"
-                    }] 
-                } if thinking_content else None
+                    })
+
+                reasoning_data = None
+                if reasoning_steps:
+                    reasoning_data = {"steps": reasoning_steps, "isExpanded": True}
 
                 assistant_message = {
                     "id": str(uuid.uuid4()),
@@ -593,7 +656,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                 # Store the complete response
                 reasoning_data = {
                     "steps": [{
-                        "id": "1",
+                        "id": "thinking",
                         "text": thinking_content,
                         "status": "complete"
                     }] 

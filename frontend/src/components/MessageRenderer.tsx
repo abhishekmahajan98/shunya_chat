@@ -106,8 +106,8 @@ const CopyButton = ({ text }: { text: string }) => {
 
 // Agent Execution Display - Shows plan and tool usage clearly
 const AgentExecutionDisplay = ({ steps }: { steps: ReasoningStep[] }) => {
-    // Filter out the actual thinking/reasoning step
-    const agentSteps = steps.filter(s => s.id !== 'thinking');
+    // Filter out the actual thinking/reasoning step (both new 'thinking' and legacy '1')
+    const agentSteps = steps.filter(s => s.id !== 'thinking' && s.id !== '1');
 
     if (agentSteps.length === 0) return null;
 
@@ -203,8 +203,8 @@ const ThinkingDisplay = ({
     onToggle: () => void;
     isThinking: boolean;
 }) => {
-    // Only get the thinking step
-    const thinkingStep = steps.find(s => s.id === 'thinking');
+    // Only get the thinking step (support both new 'thinking' and legacy '1')
+    const thinkingStep = steps.find(s => s.id === 'thinking') || steps.find(s => s.id === '1');
     if (!thinkingStep) return null;
 
     return (
