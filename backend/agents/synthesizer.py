@@ -52,6 +52,9 @@ async def synthesizer_node(state: AgentState) -> dict:
 def _build_prompt(agent_results: list, user_message: str) -> str:
     """Build the synthesis prompt from agent results."""
     results_text = ""
+    
+    # Map URLs to their global citation IDs to ensure consistency
+    url_to_id = {}
     citation_counter = 1
     
     for result in agent_results:
@@ -66,8 +69,10 @@ def _build_prompt(agent_results: list, user_message: str) -> str:
             if "citations" in result and result["citations"]:
                 results_text += "References:\n"
                 for url in result["citations"]:
-                    results_text += f"[{citation_counter}] {url}\n"
-                    citation_counter += 1
+                    if url not in url_to_id:
+                        url_to_id[url] = citation_counter
+                        citation_counter += 1
+                    results_text += f"[{url_to_id[url]}] {url}\n"
             
             continue
             
@@ -81,9 +86,11 @@ def _build_prompt(agent_results: list, user_message: str) -> str:
             
             if "citations" in result and result["citations"]:
                 results_text += "References:\n"
-                for citation in result["citations"]:
-                    results_text += f"[{citation_counter}] {citation}\n"
-                    citation_counter += 1
+                for url in result["citations"]:
+                    if url not in url_to_id:
+                        url_to_id[url] = citation_counter
+                        citation_counter += 1
+                    results_text += f"[{url_to_id[url]}] {url}\n"
                 
             if "data" in result:
                 import json

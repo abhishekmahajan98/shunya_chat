@@ -411,12 +411,14 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                                     
                                     if result.get('citations'):
                                         citation_list = []
-                                        for i, url in enumerate(result['citations']):
+                                        nonlocal citation_counter
+                                        for url in result['citations']:
                                             citation_list.append({
-                                                "id": f"agent-{result.get('agent', 'unknown')}-{i+1}",
+                                                "id": str(citation_counter),
                                                 "title": url,
                                                 "url": url
                                             })
+                                            citation_counter += 1
                                         await stream_queue.put({
                                             "type": "citations", 
                                             "citations": citation_list
@@ -457,6 +459,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             final_response = ""
             collected_results = []
             reasoning_steps = [] # Accumulate for DB storage
+            citation_counter = 1 # Sequential ID for citations
 
             while True:
                 item = await stream_queue.get()

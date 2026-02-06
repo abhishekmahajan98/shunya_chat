@@ -104,95 +104,8 @@ const CopyButton = ({ text }: { text: string }) => {
     );
 };
 
-// Agent Execution Display - Shows plan and tool usage clearly
-const AgentExecutionDisplay = ({ steps }: { steps: ReasoningStep[] }) => {
-    // Filter out the actual thinking/reasoning step (both new 'thinking' and legacy '1')
-    const agentSteps = steps.filter(s => s.id !== 'thinking' && s.id !== '1');
-
-    if (agentSteps.length === 0) return null;
-
-    return (
-        <div style={{
-            marginBottom: 12,
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 12,
-            padding: '8px 12px'
-        }}>
-            <div style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--color-text-secondary)',
-                marginBottom: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
-            }}>
-                <CheckCircleFilled style={{ color: 'var(--color-primary)' }} />
-                Agent Execution Plan
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {agentSteps.map((step, index) => {
-                    const isTool = step.id.startsWith('tool-');
-                    // Simple cleanup for tool arguments
-                    const displayText = isTool
-                        ? step.text.replace(/{'query':\s*'([^']+)'}/, '"$1"').replace(/{'query':\s*"([^"]+)"}/, '"$1"')
-                        : step.text;
-
-                    return (
-                        <div key={step.id} style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 8,
-                            fontSize: 13,
-                            paddingLeft: isTool ? 24 : 0,
-                            position: 'relative'
-                        }}>
-                            {/* Tree connector for tool items */}
-                            {isTool && (
-                                <div style={{
-                                    position: 'absolute',
-                                    left: 6,
-                                    top: -12, // Connect to previous item
-                                    bottom: 12,
-                                    width: 12,
-                                    borderLeft: '1px solid var(--color-border)',
-                                    borderBottom: '1px solid var(--color-border)',
-                                    borderBottomLeftRadius: 8
-                                }} />
-                            )}
-
-                            <div style={{ marginTop: 2, zIndex: 1, background: 'var(--color-surface)' }}>
-                                {step.status === 'running' ? (
-                                    <LoadingOutlined style={{ color: 'var(--color-primary)', fontSize: isTool ? 10 : 12 }} />
-                                ) : step.status === 'complete' ? (
-                                    <CheckOutlined style={{ color: '#52c41a', fontSize: isTool ? 10 : 12 }} />
-                                ) : (
-                                    <div style={{
-                                        width: isTool ? 8 : 12,
-                                        height: isTool ? 8 : 12,
-                                        borderRadius: '50%',
-                                        border: '2px solid var(--color-border)'
-                                    }} />
-                                )}
-                            </div>
-                            <span style={{
-                                color: step.status === 'pending' ? 'var(--color-text-tertiary)' : 'var(--color-text)',
-                                opacity: step.status === 'pending' ? 0.7 : 1,
-                                fontSize: isTool ? 12 : 13
-                            }}>
-                                {displayText}
-                            </span>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
-
-// Thinking Display Component - Minimal, above the bubble
-const ThinkingDisplay = ({
+// Unified Reasoning Display - Merges agent logs and thinking process
+const UnifiedReasoningDisplay = ({
     steps,
     isExpanded,
     onToggle,
@@ -203,13 +116,15 @@ const ThinkingDisplay = ({
     onToggle: () => void;
     isThinking: boolean;
 }) => {
-    // Only get the thinking step (support both new 'thinking' and legacy '1')
     const thinkingStep = steps.find(s => s.id === 'thinking') || steps.find(s => s.id === '1');
-    if (!thinkingStep) return null;
+    const agentSteps = steps.filter(s => s.id !== 'thinking' && s.id !== '1');
+    const isAgentic = agentSteps.length > 0;
+
+    if (agentSteps.length === 0 && (!thinkingStep || !thinkingStep.text)) return null;
 
     return (
-        <div style={{ marginBottom: 8 }}>
-            {/* Expand/Collapse Toggle */}
+        <div style={{ marginBottom: 12 }}>
+            {/* Unified Toggle Header */}
             <button
                 onClick={onToggle}
                 style={{
@@ -220,18 +135,20 @@ const ThinkingDisplay = ({
                     border: 'none',
                     padding: '4px 0',
                     cursor: 'pointer',
-                    color: 'var(--color-text-secondary)',
+                    color: 'var(--color-primary)',
                     fontSize: 13,
                     fontWeight: 500,
                 }}
             >
                 {isThinking ? (
-                    <LoadingOutlined style={{ fontSize: 12, color: 'var(--color-primary)' }} />
+                    <LoadingOutlined style={{ fontSize: 12 }} />
+                ) : isAgentic ? (
+                    <BulbOutlined style={{ fontSize: 12 }} />
                 ) : (
-                    <BulbOutlined style={{ fontSize: 12, color: 'var(--color-primary)' }} />
+                    <BulbOutlined style={{ fontSize: 12 }} />
                 )}
-                <span style={{ color: 'var(--color-primary)' }}>
-                    {isThinking ? 'Thinking...' : 'Thought process'}
+                <span>
+                    {isThinking ? (isAgentic ? 'Agentic Reasoning...' : 'Thinking...') : (isAgentic ? 'Agentic Reasoning' : 'Thought process')}
                 </span>
                 {isExpanded ? (
                     <UpOutlined style={{ fontSize: 10, opacity: 0.6 }} />
@@ -240,18 +157,113 @@ const ThinkingDisplay = ({
                 )}
             </button>
 
-            {/* Thinking Content */}
-            {isExpanded && thinkingStep.text && (
-                <div
-                    style={{
-                        paddingLeft: 20,
-                        marginTop: 4,
-                        maxHeight: isThinking ? 'none' : 400,
-                        overflowY: isThinking ? 'visible' : 'auto',
-                        color: 'var(--color-text-secondary)',
-                    }}
-                >
-                    <AIResponse content={thinkingStep.text} compact={true} />
+            {/* Content (Logs + Thought Text) */}
+            {isExpanded && (
+                <div style={{
+                    paddingTop: 4,
+                    marginTop: 4,
+                }}>
+                    {/* Agent Logs section */}
+                    {agentSteps.length > 0 && (
+                        <div style={{
+                            paddingLeft: 12,
+                            borderLeft: '1px solid var(--color-border)',
+                            marginLeft: 6,
+                            marginBottom: thinkingStep?.text ? 16 : 0
+                        }}>
+                            <div style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                color: 'var(--color-text-tertiary)',
+                                textTransform: 'uppercase',
+                                marginBottom: 8,
+                                letterSpacing: '0.5px',
+                                opacity: 0.8
+                            }}>
+                                Execution Steps
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {agentSteps.map((step) => {
+                                    const isTool = step.id.startsWith('tool-');
+                                    const displayText = isTool
+                                        ? step.text.replace(/{'query':\s*'([^']+)'}/, '"$1"').replace(/{'query':\s*"([^"]+)"}/, '"$1"')
+                                        : step.text;
+
+                                    return (
+                                        <div key={step.id} style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: 8,
+                                            fontSize: 12,
+                                            paddingLeft: isTool ? 16 : 0,
+                                            position: 'relative'
+                                        }}>
+                                            {isTool && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: 4,
+                                                    top: -8,
+                                                    bottom: 10,
+                                                    width: 8,
+                                                    borderLeft: '1px solid var(--color-border)',
+                                                    borderBottom: '1px solid var(--color-border)',
+                                                    borderBottomLeftRadius: 4
+                                                }} />
+                                            )}
+                                            <div style={{ marginTop: 2, zIndex: 1, background: 'var(--color-bg)' }}>
+                                                {step.status === 'running' ? (
+                                                    <LoadingOutlined style={{ color: 'var(--color-primary)', fontSize: 10 }} />
+                                                ) : step.status === 'complete' ? (
+                                                    <CheckOutlined style={{ color: '#52c41a', fontSize: 10 }} />
+                                                ) : (
+                                                    <div style={{ width: 8, height: 8, borderRadius: '50%', border: '1px solid var(--color-border)' }} />
+                                                )}
+                                            </div>
+                                            <span style={{
+                                                color: step.status === 'pending' ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+                                                opacity: step.status === 'pending' ? 0.7 : 1,
+                                            }}>
+                                                {displayText}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Final Thinking Text section */}
+                    {thinkingStep?.text && (
+                        <div style={{
+                            paddingLeft: 12,
+                            marginLeft: 6,
+                            borderLeft: isAgentic ? 'none' : '1px solid var(--color-border)',
+                            marginTop: isAgentic ? 12 : 0,
+                        }}>
+                            {isAgentic && (
+                                <div style={{
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    color: 'var(--color-text-tertiary)',
+                                    textTransform: 'uppercase',
+                                    marginBottom: 8,
+                                    letterSpacing: '0.5px',
+                                    opacity: 0.8,
+                                    paddingTop: 12,
+                                    borderTop: '1px solid var(--color-border-subtle)'
+                                }}>
+                                    Synthesized Reasoning
+                                </div>
+                            )}
+                            <div style={{
+                                fontSize: 13,
+                                color: 'var(--color-text-secondary)',
+                                fontStyle: isAgentic ? 'normal' : 'italic'
+                            }}>
+                                <AIResponse content={thinkingStep.text} compact={true} />
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -480,11 +492,8 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
                 marginBottom: 12,
                 maxWidth: '75%',
             }}>
-                {/* Agent Execution Plan - ABOVE the thinking */}
-                <AgentExecutionDisplay steps={message.reasoning.steps} />
-
-                {/* Thinking display - ABOVE the message bubble, no container */}
-                <ThinkingDisplay
+                {/* Unified Reasoning (Agent logs + Thinking) */}
+                <UnifiedReasoningDisplay
                     steps={message.reasoning.steps}
                     isExpanded={isReasoningExpanded}
                     onToggle={() => setIsReasoningExpanded(!isReasoningExpanded)}

@@ -263,7 +263,7 @@ interface ChatContextType {
     // Messages
     messages: Message[];
     addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => string;
-    updateMessage: (id: string, updates: Partial<Message>) => void;
+    updateMessage: (id: string, updates: Partial<Message> | ((prev: Message) => Partial<Message>)) => void;
     clearMessages: () => void;
     conversationId: string | null;
     setConversationId: (id: string | null) => void;
@@ -395,9 +395,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
         return id;
     };
 
-    const updateMessage = (id: string, updates: Partial<Message>) => {
+    const updateMessage = (id: string, updates: Partial<Message> | ((prev: Message) => Partial<Message>)) => {
         setMessages((prev) =>
-            prev.map((msg) => (msg.id === id ? { ...msg, ...updates } : msg))
+            prev.map((msg) => {
+                if (msg.id === id) {
+                    const actualUpdates = typeof updates === 'function' ? updates(msg) : updates;
+                    return { ...msg, ...actualUpdates };
+                }
+                return msg;
+            })
         );
     };
 

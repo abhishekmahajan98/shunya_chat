@@ -457,10 +457,21 @@ const ChatPage = () => {
               } : undefined,
             });
           } else if (chunk.type === 'citations') {
-            updateMessage(assistantMsgId, {
-              citations: chunk.citations
+            // Append citations to the current message
+            // Note: chunk.citations is already an array
+            const newCitations = chunk.citations || [];
+            updateMessage(assistantMsgId, (prev: any) => {
+              const existingCitations = prev.citations || [];
+              // Filter out duplicates by URL
+              const uniqueNewCitations = newCitations.filter(
+                (newCit: any) => !existingCitations.some((oldCit: any) => oldCit.url === newCit.url)
+              );
+              return {
+                citations: [...existingCitations, ...uniqueNewCitations]
+              };
             });
-          } else if (chunk.type === 'error') {
+          }
+          else if (chunk.type === 'error') {
             updateMessage(assistantMsgId, {
               type: 'sync',
               content: `Error: ${chunk.content}`,
