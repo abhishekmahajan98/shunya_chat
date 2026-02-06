@@ -52,14 +52,17 @@ class GeminiProvider(LLMProvider):
         # Configure Gemini 3 Thinking
         # - include_thoughts=True: MANDATORY to get thoughts in response
         # - thinking_level: HIGH for deep reasoning (pro), LOW for fast (flash)
-        config = GenerateContentConfig(
-            system_instruction=get_system_prompt("America/New_York"),
-            thinking_config=ThinkingConfig(
+        is_thinking_supported = any(m in model_id.lower() for m in ["gemini-3", "gemini-2.5", "gemini-2.0", "gemini-exp"])
+        
+        config_kwargs = {}
+        if is_thinking_supported:
+            config_kwargs["thinking_config"] = ThinkingConfig(
                 include_thoughts=True,
                 thinking_level=ThinkingLevel.HIGH if "pro" in model_id.lower() else ThinkingLevel.LOW
-            ),
-            response_modalities=["TEXT"]
-        )
+            )
+            config_kwargs["response_modalities"] = ["TEXT"]
+            
+        config = GenerateContentConfig(**config_kwargs)
         
         # Use async context manager for proper streaming
         async for chunk in await self.client.aio.models.generate_content_stream(
@@ -72,12 +75,12 @@ class GeminiProvider(LLMProvider):
             
             for part in chunk.candidates[0].content.parts:
                 # 1. Handle Thinking Parts
-                # The SDK explicitly flags these with 'thought=True'
-                if part.thought:
+                # The SDK explicitly flags these with 'thought'
+                if getattr(part, 'thought', None):
                     yield {"type": "thinking", "content": part.text}
                 
                 # 2. Handle Final Response Parts
-                elif part.text:
+                elif getattr(part, 'text', None):
                     yield {"type": "text", "content": part.text}
 
     async def _format_messages(self, messages: list[dict]) -> list[dict]:

@@ -1,31 +1,38 @@
 """
 Router/Supervisor Node.
-Uses LLM to decide which MCP tools to activate based on user intent.
-Only considers agents that user has explicitly activated.
+Uses LLM to decide which MCP tools to activate and assigns high-level goals.
+Acts as a Supervisor that delegates tasks to worker agents.
 """
 import json
 import os
 from google import genai
 from dotenv import load_dotenv
-from .state import AgentState, AGENT_REGISTRY
+from .state import AgentState, AgentGoal
 from .mcp_client import get_mcp_client
 
 load_dotenv()
 
-ROUTER_PROMPT = """You are a task router for a multi-agent system. Analyze the user's message and decide which tools to activate.
+SUPERVISOR_PROMPT = """You are a Supervisor for a multi-agent system.
+Your job is to break down the user's request into high-level tasks for your available Agents.
 
-Available Tools (these are the only tools you can use):
+Available Agents:
 {tool_descriptions}
 
 Rules:
-1. You can activate multiple tools if the task requires it
-2. Choose "parallel" mode if tools are independent, "sequential" if one depends on another
-3. If no special tools are needed, return an empty list (base LLM will handle it)
-4. Only select tools that are clearly relevant to the user's request
-5. You can ONLY select from the available tools listed above
+1. DELEGATE: Assign tasks to agents that are best suited for them.
+2. BE SPECIFIC: Give each agent a clear, high-level goal (e.g., "Search for Tesla's latest stock price" or "Plot the data provided").
+3. DEPENDENCIES: If tasks depend on each other (e.g., Search before Plot), order them logically.
+4. If NO special agents are valid/needed, return an empty list.
+5. ONLY select from the Available Agents listed above.
 
 Respond with ONLY valid JSON in this format:
-{{"tools": ["tool1", "tool2"], "mode": "parallel" | "sequential"}}
+{{
+  "plan": [
+    {{"agent": "agent_name", "goal": "clear instruction"}},
+    {{"agent": "another_agent", "goal": "another instruction"}}
+  ],
+  "mode": "sequential"
+}}
 
 User Message: {user_message}
 """
@@ -38,22 +45,36 @@ def _build_tool_descriptions(active_agent_ids: list[str] | None = None) -> str:
     tools = mcp_client.get_available_tools(active_agent_ids)
     
     if not tools:
-        return "No tools available. The base LLM will handle this request."
+        return "No agents available. The base LLM will handle this request."
     
     lines = []
     for tool in tools:
-        lines.append(f"- {tool['name']}: {tool['description']}")
+        lines.append(f"- ID: {tool['name']}")
+        lines.append(f"  Description: {tool['description']}")
         lines.append(f"  Capabilities: {', '.join(tool['capabilities'])}")
+        lines.append("")
     
     return "\n".join(lines)
 
 
-async def router_node(state: AgentState) -> dict:
+def _format_history(messages: list) -> str:
+    """Format message history into a string for the prompt."""
+    formatted = []
+    for msg in messages:
+        # Check if it's a LangChain message or dict
+        role = "User" if (hasattr(msg, 'type') and msg.type == "human") else "Assistant"
+        content = msg.content if hasattr(msg, 'content') else str(msg)
+        formatted.append(f"{role}: {content}")
+    return "\n".join(formatted)
+
+
+async def supervisor_node(state: AgentState) -> dict:
     """
-    Use LLM to decide which MCP tools to activate.
-    Only considers tools that user has activated.
-    Returns the list of tools and execution mode.
+    Supervisor Node (formerly Router).
+    Decides which agents to use and gives them specific goals.
     """
+    # Use full history to resolve context
+    chat_history = _format_history(state["messages"])
     last_message = state["messages"][-1]
     user_message = last_message.content if hasattr(last_message, 'content') else str(last_message)
     
@@ -70,11 +91,14 @@ async def router_node(state: AgentState) -> dict:
             "execution_mode": "sequential"
         }
     
-    # Build the prompt
-    prompt = ROUTER_PROMPT.format(
+    # Build the prompt with history
+    prompt = SUPERVISOR_PROMPT.format(
         tool_descriptions=tool_descriptions,
         user_message=user_message
     )
+    
+    # Prepend history to prompt to give context
+    full_prompt = f"Chat History:\n{chat_history}\n\n{prompt}"
     
     try:
         # Use Gemini Flash for fast routing decisions
@@ -83,7 +107,7 @@ async def router_node(state: AgentState) -> dict:
         
         response = client.models.generate_content(
             model="gemini-2.0-flash",
-            contents=[{"role": "user", "parts": [{"text": prompt}]}]
+            contents=[{"role": "user", "parts": [{"text": full_prompt}]}]
         )
         
         # Parse JSON response
@@ -96,19 +120,26 @@ async def router_node(state: AgentState) -> dict:
         
         decision = json.loads(response_text)
         
-        # Filter to only include agents that were actually activated by user
-        requested_tools = decision.get("tools", decision.get("agents", []))
-        if user_active_agents is not None:
-            requested_tools = [t for t in requested_tools if t in user_active_agents]
+        plan = decision.get("plan", [])
         
+        # Filter: Ensure we only use agents the user actually activated
+        # This prevents the LLM from hallucinating agents or bypassing user settings
+        valid_plan = []
+        if user_active_agents is not None:
+             for step in plan:
+                 if step["agent"] in user_active_agents:
+                     valid_plan.append(step)
+        else:
+            valid_plan = plan
+
         return {
-            "active_agents": requested_tools,
+            "active_agents": valid_plan,
             "execution_mode": decision.get("mode", "sequential")
         }
         
     except Exception as e:
         # Fallback: no tools, let base LLM handle it
-        print(f"Router error: {e}")
+        print(f"Supervisor error: {e}")
         return {
             "active_agents": [],
             "execution_mode": "sequential"

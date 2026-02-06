@@ -322,9 +322,27 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
         from langchain_core.messages import HumanMessage
         from agents.graph import get_agent_graph
         
+        # Fetch conversation history for context
+        from langchain_core.messages import HumanMessage, AIMessage
+        history_result = supabase.table("messages")\
+            .select("*")\
+            .eq("conversation_id", conversation["id"])\
+            .order("created_at", desc=True)\
+            .limit(15)\
+            .execute()
+        
+        # Reverse to get chronological order
+        history_data = reversed(history_result.data)
+        lc_messages = []
+        for msg in history_data:
+            if msg["role"] == "user":
+                lc_messages.append(HumanMessage(content=msg["content"]))
+            else:
+                lc_messages.append(AIMessage(content=msg.get("content", "")))
+
         # Build initial agent state
         initial_state = {
-            "messages": [HumanMessage(content=request.content)],
+            "messages": lc_messages,
             "conversation_id": conversation["id"],
             "current_model": request.model,
             "user_active_agents": request.active_agents,
@@ -356,20 +374,46 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                         if node_name == "router":
                             active_agents = node_output.get("active_agents", [])
                             if active_agents:
+                                # Stream the full plan
+                                yield f"data: {json.dumps({'type': 'plan_created', 'plan': active_agents})}\n\n"
+                                
                                 from agents.mcp_client import get_mcp_client
                                 mcp_client = get_mcp_client()
                                 
-                                for agent in active_agents:
-                                    server_config = mcp_client.get_server_by_id(agent)
-                                    agent_name = server_config.name if server_config else agent
-                                    yield f"data: {json.dumps({'type': 'agent_status', 'agent': agent, 'name': agent_name, 'status': 'starting'})}\n\n"
+                                for step in active_agents:
+                                    agent_id = step.get("agent", "unknown")
+                                    # Fetch name if possible, or use ID
+                                    server_config = mcp_client.get_server_by_id(agent_id)
+                                    agent_name = server_config.name if server_config else agent_id
+                                    
+                                    # Notify UI that this agent is part of the plan (initially 'pending')
+                                    yield f"data: {json.dumps({'type': 'agent_status', 'agent': agent_id, 'name': agent_name, 'goal': step.get('goal'), 'status': 'pending'})}\n\n"
                         
                         elif node_name == "executor":
                             # MCP executor completed
                             results = node_output.get("agent_results", [])
                             for result in results:
                                 collected_results.append(result)
-                                yield f"data: {json.dumps({'type': 'agent_result', 'agent': result.get('agent', 'unknown'), 'status': result.get('status', 'unknown'), 'data': result})}\n\n"
+                                
+                                status = 'success'
+                                data = result.get('result')
+                                
+                                if result.get('error'):
+                                    status = 'error'
+                                    data = result.get('error')
+                                    
+                                yield f"data: {json.dumps({'type': 'agent_result', 'agent': result.get('agent', 'unknown'), 'goal': result.get('goal'), 'status': status, 'data': data})}\n\n"
+                                
+                                # Stream citations discovered by the agent
+                                if result.get('citations'):
+                                    citation_list = []
+                                    for i, url in enumerate(result['citations']):
+                                        citation_list.append({
+                                            "id": f"agent-{result.get('agent', 'unknown')}-{i+1}",
+                                            "title": url,
+                                            "url": url
+                                        })
+                                    yield f"data: {json.dumps({'type': 'citations', 'citations': citation_list})}\n\n"
                         
                         elif node_name == "synthesizer":
                             # Check if synthesis is needed
@@ -387,16 +431,6 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                                         final_response += chunk["content"]
                                     elif chunk["type"] == "thinking":
                                         thinking_content += chunk["content"]
-                                
-                                # Extract and stream citations
-                                citations = []
-                                for result in collected_results:
-                                    if result.get("agent") == "search" and "citations" in result:
-                                        citations.extend(result["citations"])
-                                
-                                if citations:
-                                    formatted_citations = [{"id": str(i+1), "title": c, "page": None} for i, c in enumerate(citations)]
-                                    yield f"data: {json.dumps({'type': 'citations', 'citations': formatted_citations})}\n\n"
                 
                 # Fallback if no agents were triggered
                 if not collected_results and not final_response:

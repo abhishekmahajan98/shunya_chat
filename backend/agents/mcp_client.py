@@ -161,6 +161,69 @@ class MCPClient:
             return {"status": "error", "error": str(e)}
 
 
+
+    async def get_langchain_tools(self, server_id: str):
+        """
+        Connect to an MCP server, list its tools, and wrap them as LangChain StructuredTools.
+        This enables a ReAct agent to use them dynamically.
+        """
+        from langchain_core.tools import StructuredTool
+        from pydantic import BaseModel, Field
+
+        server = self.get_server_by_id(server_id)
+        if not server:
+            return []
+
+        try:
+            # We must connect to discover tools
+            # Note: This is an expensive operation per-step. In production, we should cache tool definitions.
+            transport = SSETransport(url=f"{server.url}/sse")
+            
+            # Use 'async with' to manage connection lifecycle for discovery
+            async with Client(transport) as client:
+                tools_list = await client.list_tools()
+                
+                langchain_tools = []
+                
+                if not tools_list:
+                    return []
+
+                for tool_def in tools_list:
+                    # Capture closure variables for the wrapper
+                    t_name = tool_def.name
+                    t_desc = tool_def.description or f"Tool: {t_name}"
+
+                    # Define the async wrapper function
+                    # We use a closure factory to bind the name correctly
+                    def make_wrapper(s_id, t_n):
+                        async def _wrapper(query: str):
+                            # Call the consolidated invoke_tool method
+                            result = await self.invoke_tool(s_id, t_n, {"query": query})
+                            if "error" in result:
+                                return f"Error: {result['error']}"
+                            return json.dumps(result)
+                        return _wrapper
+
+                    # Create the Pydantic input model
+                    # Currently assuming single string input "query" for compatibility
+                    class ToolInput(BaseModel):
+                        query: str = Field(description="The input query or data for this tool")
+
+                    langchain_tools.append(
+                        StructuredTool.from_function(
+                            coroutine=make_wrapper(server_id, t_name),
+                            name=t_name,
+                            description=t_desc,
+                            args_schema=ToolInput
+                        )
+                    )
+                return langchain_tools
+
+        except Exception as e:
+            print(f"Error fetching tools for {server_id}: {e}")
+            return []
+
+
 # Singleton instance
 _mcp_client: MCPClient | None = None
 

@@ -7,6 +7,12 @@ from langgraph.graph import MessagesState
 from operator import add
 
 
+
+class AgentGoal(TypedDict):
+    """A goal for a specific agent."""
+    agent: str  # The ID of the agent (e.g., 'search', 'finance')
+    goal: str   # The high-level instruction for the worker agent
+
 class AgentState(MessagesState):
     """Extended state for multi-agent orchestration."""
     
@@ -17,8 +23,8 @@ class AgentState(MessagesState):
     # User-activated agents (from frontend toggle)
     user_active_agents: Optional[list[str]]  # Agents user has enabled in UI
     
-    # Agent orchestration
-    active_agents: list[str]  # [\"search\", \"data\", etc.] - decided by router
+    # Agent orchestration - now a list of goals
+    active_agents: list[AgentGoal]  # [{"agent": "search", "goal": "Find price"}, ...]
     execution_mode: Literal["sequential", "parallel", "single"]
     
     # Agent results (accumulated using reducer)

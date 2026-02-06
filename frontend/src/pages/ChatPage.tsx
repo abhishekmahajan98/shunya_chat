@@ -232,6 +232,10 @@ const ChatPage = () => {
     let textContent = '';
     // Track agents in a local variable (React state is async, causes stale closure)
     const collectedAgents: string[] = [];
+    // Track reasoning steps locally due to closure
+    // We define this interface locally to match ReasoningStep but without import issues if specific props differ
+    interface LocalReasoningStep { id: string; text: string; status: 'pending' | 'running' | 'complete' }
+    const collectedSteps: LocalReasoningStep[] = [];
 
     try {
       await streamMessage(
@@ -241,25 +245,77 @@ const ChatPage = () => {
           if (chunk.type === 'meta' && chunk.conversation_id) {
             setConversationId(chunk.conversation_id);
           } else if (chunk.type === 'agent_status') {
-            // Agent starting - add to local array
+            // Agent status update (Plan execution)
             const agentName = chunk.name || chunk.agent || '';
-            if (!collectedAgents.includes(agentName)) {
-              collectedAgents.push(agentName);
-              // We could update agents here, but we keep pending=true until content starts
-              updateMessage(assistantMsgId, {
-                agents: collectedAgents
+            const goal = chunk.goal;
+            const status = chunk.status as 'pending' | 'running' | 'complete' | 'error';
+
+            // Add to active agents list if not present
+            if (chunk.agent && !collectedAgents.includes(chunk.agent)) {
+              collectedAgents.push(chunk.agent);
+            }
+
+            // Map agent action to a Reasoning Step
+            const stepId = `agent-${chunk.agent}`;
+            const stepText = goal ? `${agentName}: ${goal}` : `${agentName} working...`;
+
+            const existingStepIndex = collectedSteps.findIndex(s => s.id === stepId);
+
+            if (existingStepIndex >= 0) {
+              // Update existing step
+              collectedSteps[existingStepIndex] = {
+                ...collectedSteps[existingStepIndex],
+                status: status === 'pending' ? 'pending' : 'running',
+                text: stepText
+              };
+            } else {
+              // Add new step
+              collectedSteps.push({
+                id: stepId,
+                text: stepText,
+                status: status === 'pending' ? 'pending' : 'running'
               });
             }
+
+            updateMessage(assistantMsgId, {
+              agents: collectedAgents,
+              type: 'reasoning',
+              reasoning: {
+                steps: [...collectedSteps],
+                isExpanded: true
+              }
+            });
+
           } else if (chunk.type === 'agent_result') {
-            // Agent completed - no action needed, name already collected
+            // Agent completed step
+            const stepId = `agent-${chunk.agent}`;
+
+            const existingStepIndex = collectedSteps.findIndex(s => s.id === stepId);
+
+            if (existingStepIndex >= 0) {
+              collectedSteps[existingStepIndex] = {
+                ...collectedSteps[existingStepIndex],
+                status: 'complete',
+                text: collectedSteps[existingStepIndex].text + (chunk.data ? ' ✓' : '')
+              };
+            }
+
+            updateMessage(assistantMsgId, {
+              reasoning: {
+                steps: [...collectedSteps],
+                isExpanded: true
+              }
+            });
+
           } else if (chunk.type === 'thinking') {
             thinkingContent += chunk.content || '';
-            // Transition to reasoning type and clear pending on first thinking chunk
             updateMessage(assistantMsgId, {
               pending: false, // Stop loader
               type: 'reasoning',
               reasoning: {
-                steps: [{ id: '1', text: thinkingContent, status: 'running' }],
+                // Focus on thinking content as requested by user
+                steps: [{ id: 'thinking', text: thinkingContent, status: 'running' }],
+                isExpanded: true
               },
             });
           } else if (chunk.type === 'text') {
@@ -269,7 +325,8 @@ const ChatPage = () => {
               pending: false, // Stop loader
               content: textContent,
               reasoning: thinkingContent ? {
-                steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
+                steps: [{ id: 'thinking', text: thinkingContent, status: 'complete' }],
+                isExpanded: false // Collapse when text arrives
               } : undefined,
             });
           } else if (chunk.type === 'done') {
@@ -280,7 +337,8 @@ const ChatPage = () => {
               content: textContent,
               agents: collectedAgents.length > 0 ? collectedAgents : undefined,
               reasoning: thinkingContent ? {
-                steps: [{ id: '1', text: thinkingContent, status: 'complete' }],
+                steps: [{ id: 'thinking', text: thinkingContent, status: 'complete' }],
+                isExpanded: false
               } : undefined,
             });
           } else if (chunk.type === 'citations') {

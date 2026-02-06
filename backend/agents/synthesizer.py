@@ -58,8 +58,23 @@ def _build_prompt(agent_results: list, user_message: str) -> str:
     
     for result in agent_results:
         agent_name = result.get("agent", "Unknown")
-        status = result.get("status", "unknown")
         
+        # New Hierarchical Format
+        if "goal" in result and "result" in result:
+            results_text += f"\n### {agent_name.upper()} Agent\n"
+            results_text += f"Goal: {result['goal']}\n"
+            results_text += f"Result: {result['result']}\n"
+            
+            if "citations" in result and result["citations"]:
+                results_text += "References:\n"
+                for url in result["citations"]:
+                    results_text += f"[{citation_counter}] {url}\n"
+                    citation_counter += 1
+            
+            continue
+            
+        # Old Format Logic (Fallback)
+        status = result.get("status", "unknown")
         results_text += f"\n### {agent_name.upper()} Agent ({status})\n"
         
         if status == "success":
@@ -76,9 +91,6 @@ def _build_prompt(agent_results: list, user_message: str) -> str:
                 import json
                 results_text += f"Retrieved {result.get('record_count', 0)} records:\n"
                 results_text += f"```json\n{json.dumps(result['data'], indent=2)}\n```\n"
-            if "email" in result:
-                results_text += f"Email Status: {result['email']['status']}\n"
-                results_text += f"Subject: {result['email']['subject']}\n"
         else:
             results_text += f"Error: {result.get('error', 'Unknown error')}\n"
     
@@ -127,7 +139,7 @@ async def _stream_gemini(prompt: str, model: str) -> AsyncGenerator[dict, None]:
     client = genai.Client(api_key=api_key)
     
     # Check if model supports thinking
-    is_gemini3 = "gemini-3" in model or "gemini-2.5" in model
+    is_gemini3 = any(m in model.lower() for m in ["gemini-3", "gemini-2.5", "gemini-2.0", "gemini-exp"])
     
     try:
         if is_gemini3:
@@ -135,7 +147,8 @@ async def _stream_gemini(prompt: str, model: str) -> AsyncGenerator[dict, None]:
                 thinking_config=ThinkingConfig(
                     include_thoughts=True,
                     thinking_level=ThinkingLevel.HIGH if "pro" in model.lower() else ThinkingLevel.LOW
-                )
+                ),
+                response_modalities=["TEXT"]
             )
             
             response_stream = await client.aio.models.generate_content_stream(
@@ -145,12 +158,31 @@ async def _stream_gemini(prompt: str, model: str) -> AsyncGenerator[dict, None]:
             )
             
             async for response in response_stream:
-                if response.candidates and response.candidates[0].content:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'thought') and part.thought:
-                            yield {"type": "thinking", "content": part.text}
-                        elif hasattr(part, 'text') and part.text:
-                            yield {"type": "text", "content": part.text}
+                if response.candidates:
+                    candidate = response.candidates[0]
+                    
+                    # Extract citations
+                    if hasattr(candidate, 'citation_metadata') and candidate.citation_metadata:
+                        citations = []
+                        for i, source in enumerate(candidate.citation_metadata.citation_sources):
+                            if source.uri:
+                                citations.append({
+                                    "id": str(i + 1),
+                                    "title": source.uri,
+                                    "uri": source.uri,
+                                    "startIndex": source.start_index,
+                                    "endIndex": source.end_index
+                                })
+                        if citations:
+                            yield {"type": "citations", "citations": citations}
+
+                    if candidate.content:
+                        for part in candidate.content.parts:
+                            # Revert to known working logic: part.text when thought is truthy
+                            if getattr(part, 'thought', None):
+                                yield {"type": "thinking", "content": part.text}
+                            elif getattr(part, 'text', None):
+                                yield {"type": "text", "content": part.text}
         else:
             response_stream = await client.aio.models.generate_content_stream(
                 model=model,
@@ -158,6 +190,16 @@ async def _stream_gemini(prompt: str, model: str) -> AsyncGenerator[dict, None]:
             )
             
             async for response in response_stream:
+                if response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'citation_metadata') and candidate.citation_metadata:
+                        citations = []
+                        for i, source in enumerate(candidate.citation_metadata.citation_sources):
+                            if source.uri:
+                                citations.append({"id": str(i+1), "title": source.uri, "uri": source.uri})
+                        if citations:
+                            yield {"type": "citations", "citations": citations}
+
                 if response.text:
                     yield {"type": "text", "content": response.text}
                     

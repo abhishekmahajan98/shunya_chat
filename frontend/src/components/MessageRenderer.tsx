@@ -116,7 +116,11 @@ const ThinkingDisplay = ({
     onToggle: () => void;
     isThinking: boolean;
 }) => {
-    const thinkingText = steps[0]?.text || '';
+    // Combine all steps into a single reasoning block for display
+    const thinkingText = steps.map(s => {
+        const prefix = s.status === 'running' ? '● ' : s.status === 'complete' ? '✓ ' : '○ ';
+        return s.text ? `${prefix}${s.text}` : '';
+    }).filter(Boolean).join('\n\n');
 
     return (
         <div style={{ marginBottom: 8 }}>
@@ -151,7 +155,7 @@ const ThinkingDisplay = ({
                 )}
             </button>
 
-            {/* Thinking Content - No visible container, just subtle text */}
+            {/* Thinking Content - Combined reasoning text */}
             {isExpanded && thinkingText && (
                 <div
                     style={{
