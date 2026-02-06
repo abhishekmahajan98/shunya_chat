@@ -10,6 +10,8 @@ from fastmcp import Client
 from fastmcp.client.transports import SSETransport
 from dotenv import load_dotenv
 
+from database import get_supabase
+
 load_dotenv()
 
 # Get the backend directory for absolute paths
@@ -29,36 +31,49 @@ class MCPServerConfig:
     has_access: bool = True
 
 
-# Registry of available MCP servers
-MCP_SERVERS: list[MCPServerConfig] = [
-    MCPServerConfig(
-        id="search",
-        name="Quick Search",
-        icon="search",
-        description="Fast web lookup for instant answers using Perplexity",
-        category="research",
-        url="http://localhost:8001",
-        capabilities=["search", "web", "lookup", "find", "research"],
-        has_access=True
-    ),
-]
-
-
 class MCPClient:
     """
     Client for interacting with MCP servers via HTTP.
     """
     
     def __init__(self):
-        self.servers = {s.id: s for s in MCP_SERVERS}
+        self.servers: dict[str, MCPServerConfig] = {}
+        self.refresh_servers()
+    
+    def refresh_servers(self):
+        """Fetch latest server configuration from database."""
+        try:
+            supabase = get_supabase()
+            result = supabase.table("agents").select("*").execute()
+            agents_data = result.data or []
+            
+            new_servers = {}
+            for agent in agents_data:
+                server = MCPServerConfig(
+                    id=agent["id"],
+                    name=agent["name"],
+                    icon=agent["icon"],
+                    description=agent["description"],
+                    category=agent["category"],
+                    url=agent["url"],
+                    capabilities=agent.get("capabilities", []),
+                    has_access=agent.get("has_access", True)
+                )
+                new_servers[server.id] = server
+            
+            self.servers = new_servers
+        except Exception as e:
+            print(f"Failed to refresh MCP servers: {e}")
+            # Keep existing servers if refresh fails
     
     def get_all_agents(self) -> list[dict]:
         """
         Get all registered agents for the marketplace UI.
         Returns agent metadata including category.
         """
+        self.refresh_servers()  # Ensure we have latest data
         agents = []
-        for server in MCP_SERVERS:
+        for server in self.servers.values():
             agents.append({
                 "id": server.id,
                 "name": server.name,
@@ -74,11 +89,20 @@ class MCPClient:
         """
         Get list of available tools, optionally filtered by active agents.
         """
+        # Always refresh to ensure we have the latest agent configs (especially new ones)
+        self.refresh_servers()
+        
         tools = []
-        for server in MCP_SERVERS:
+        for server in self.servers.values():
             # If active_agent_ids is provided, only include those
+            # This is CRITICAL for preventing context pollution
             if active_agent_ids is not None and server.id not in active_agent_ids:
                 continue
+            
+            # Only include agents with access enabled
+            if not server.has_access:
+                continue
+
             tools.append({
                 "name": server.id,
                 "description": server.description,
@@ -88,6 +112,9 @@ class MCPClient:
     
     def get_server_by_id(self, server_id: str) -> MCPServerConfig | None:
         """Get a server by its ID."""
+        # Check if we have it locally first, otherwise try to refresh
+        if server_id not in self.servers:
+            self.refresh_servers()
         return self.servers.get(server_id)
     
     async def invoke_tool(self, server_id: str, tool_name: str, arguments: dict[str, Any]) -> dict:
@@ -102,7 +129,7 @@ class MCPClient:
         Returns:
             Tool result as a dict
         """
-        server = self.servers.get(server_id)
+        server = self.get_server_by_id(server_id)
         if not server:
             return {"status": "error", "error": f"Unknown server: {server_id}"}
         

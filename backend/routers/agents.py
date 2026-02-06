@@ -20,6 +20,7 @@ class AgentResponse(BaseModel):
     description: str
     category: str  # research | compliance | finance | automation
     url: str
+    capabilities: list[str] = []
     hasAccess: bool
 
 
@@ -31,6 +32,7 @@ class RegisterAgentRequest(BaseModel):
     description: str
     category: str  # research | compliance | finance | automation
     url: str
+    capabilities: list[str] = []
 
 
 def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[dict]:
@@ -82,6 +84,7 @@ async def list_agents(user: Optional[dict] = Depends(get_optional_user)) -> list
             "description": agent["description"],
             "category": agent["category"],
             "url": agent["url"],
+            "capabilities": agent.get("capabilities", []),
             "hasAccess": agent.get("has_access", True),
             "isFavorite": agent["id"] in favorites,
         })
@@ -110,6 +113,7 @@ async def register_agent(request: RegisterAgentRequest, user: dict = Depends(get
         "description": request.description,
         "category": request.category,
         "url": request.url,
+        "capabilities": request.capabilities,
         "has_access": True,  # Default to true for now
     }
     

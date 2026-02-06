@@ -20,7 +20,7 @@ import { useChat, type Attachment } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
-import { streamAgentMessage, type AgentStreamChunk, uploadFile } from '../api';
+import { streamMessage, type AgentStreamChunk, uploadFile } from '../api';
 
 const { Sider, Content } = Layout;
 
@@ -234,7 +234,7 @@ const ChatPage = () => {
     const collectedAgents: string[] = [];
 
     try {
-      await streamAgentMessage(
+      await streamMessage(
         selectedModel.id,
         userInput,
         (chunk: AgentStreamChunk) => {

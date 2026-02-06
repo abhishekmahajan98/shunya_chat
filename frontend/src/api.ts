@@ -135,62 +135,6 @@ export interface StreamChunk {
     conversation_id?: string;
 }
 
-/**
- * Stream a message response from the chat API.
- * Calls onChunk for each received chunk.
- */
-export async function streamMessage(
-    model: string,
-    content: string,
-    onChunk: (chunk: StreamChunk) => void,
-    conversationId?: string
-): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            model,
-            content,
-            conversation_id: conversationId,
-        }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(error.detail || 'Failed to stream message');
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error('No response body');
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                try {
-                    const data = JSON.parse(line.slice(6));
-                    onChunk(data);
-                } catch {
-                    // Skip invalid JSON
-                }
-            }
-        }
-    }
-}
-
 // Agent-specific types
 export interface AgentStatus {
     agent: string;
@@ -231,53 +175,11 @@ export interface AgentInfo {
     isFavorite: boolean;
 }
 
-
 /**
- * Get all available agents from the backend registry.
+ * Stream a message response from the chat API.
+ * Calls onChunk for each received chunk.
  */
-export async function getAgents(): Promise<AgentInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/agents`, {
-        headers: getAuthHeaders(),
-    });
-    if (!response.ok) {
-        throw new Error('Failed to fetch agents');
-    }
-    return response.json();
-}
-
-/**
- * Get user's favorite agents.
- */
-export async function getFavoriteAgents(): Promise<AgentInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/agents/favorites`, {
-        headers: getAuthHeaders(),
-    });
-    if (!response.ok) {
-        throw new Error('Failed to fetch favorite agents');
-    }
-    return response.json();
-}
-
-/**
- * Toggle favorite status for an agent.
- */
-export async function toggleAgentFavorite(agentId: string): Promise<{ id: string; isFavorite: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/favorite`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-    });
-    if (!response.ok) {
-        throw new Error('Failed to toggle favorite');
-    }
-    return response.json();
-}
-
-/**
- * Stream a message with agent support.
- * Uses the /chat/agent endpoint which activates agents based on intent.
- * @param activeAgents - List of agent IDs that are currently activated in the UI
- */
-export async function streamAgentMessage(
+export async function streamMessage(
     model: string,
     content: string,
     onChunk: (chunk: AgentStreamChunk) => void,
@@ -285,7 +187,7 @@ export async function streamAgentMessage(
     activeAgents?: string[],
     attachments?: any[]
 ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/chat/agent`, {
+    const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -334,6 +236,46 @@ export async function streamAgentMessage(
     }
 }
 
+/**
+ * Get all available agents from the backend registry.
+ */
+export async function getAgents(): Promise<AgentInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/agents`, {
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch agents');
+    }
+    return response.json();
+}
+
+/**
+ * Get user's favorite agents.
+ */
+export async function getFavoriteAgents(): Promise<AgentInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/agents/favorites`, {
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error('Failed to fetch favorite agents');
+    }
+    return response.json();
+}
+
+/**
+ * Toggle favorite status for an agent.
+ */
+export async function toggleAgentFavorite(agentId: string): Promise<{ id: string; isFavorite: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/favorite`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error('Failed to toggle favorite');
+    }
+    return response.json();
+}
+
 export interface RegisterAgentRequest {
     id: string;
     name: string;
@@ -366,21 +308,7 @@ export async function registerAgent(agent: RegisterAgentRequest): Promise<{ id: 
 
 /**
  * Upload a file to Supabase storage.
- * Note: Uses direct Supabase client would be better, but for now we'll assume we have a supabase client available
- * or we can use a simple fetch if we had an upload endpoint. 
- * OR, since we are using supabase-js client in common code, we can use it here.
- * But `api.ts` seems to use fetch. Let's stick to using the Supabase client directly in the component 
- * OR create a simple wrapper here if we have the client initialized.
- * 
- * Wait, the auth system uses supabase client. Let's import it from context or similar?
- * Actually, to keep it clean, let's implement `uploadFile` using the supabase client from `lib/supabase` if it exists,
- * or just export a function that takes the file and uploads it.
  */
-// We need supabase client. Let's assume we import from logic or pass it.
-// Simpler: Let's assume the component will handle the upload using the supabase client available there.
-// But wait, the plan said "Modify api.ts - Add uploadFile function".
-// Let's implement it here using the supabase client instance.
-
 export async function uploadFile(file: File): Promise<{ url: string; path: string; name: string; type: string; size: number }> {
     const formData = new FormData();
     formData.append('file', file);

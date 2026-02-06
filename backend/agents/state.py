@@ -26,14 +26,12 @@ class AgentState(MessagesState):
     
     # Final synthesized response
     final_response: Optional[str]
+    
+    # Synthesis control
+    needs_synthesis: bool
+    synthesis_prompt: str
 
 
 # MCP Tool Registry - maps tool names to their descriptions (for routing)
-# This is now dynamically populated from MCP servers
-AGENT_REGISTRY = {
-    "search": {
-        "name": "Web Search",
-        "description": "Search the internet for current information using Perplexity",
-        "triggers": ["search", "find", "look up", "what is", "who is", "current", "latest", "news", "research"]
-    },
-}
+# This is now dynamically populated from MCP servers via MCPClient
+AGENT_REGISTRY = {}
