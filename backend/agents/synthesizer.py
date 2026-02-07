@@ -20,10 +20,9 @@ Current Date: {current_date}
 Guidelines:
 - Synthesize all relevant information from the agent results
 - Use markdown formatting for clarity (headers, lists, tables if appropriate)
-- CRITICAL: The search results may contain their own citation numbers. IGNORE THEM.
-- ONLY use the citation numbers provided in the "References" list below (e.g. [1], [2]).
+- If agents provide references/citations, use them to support your response.
+- CRITICAL: Use consistent citation numbering (e.g. [1], [2]) based on the "References" list provided for each agent.
 - Do NOT use citation numbers that exceed the total count of provided references.
-- Use inline citations (e.g. [1], [2]) to refer to these specific sources.
 - DO NOT list the sources/references at the end of your response. The user interface displays them automatically.
 - Be concise but thorough
 - If agents returned errors, acknowledge them gracefully

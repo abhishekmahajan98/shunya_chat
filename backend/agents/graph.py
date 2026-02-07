@@ -103,7 +103,12 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
             worker_agent = create_react_agent(llm, tools)
             
             # 3. specific prompt for the worker
+            agent_config = mcp_client.get_server_by_id(agent_name)
+            system_prompt = agent_config.system_prompt if agent_config else ""
+            
             worker_input = f"""
+            {system_prompt}
+            
             You are the '{agent_name}' specialist.
             
             Chat History:
@@ -114,7 +119,7 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
             Context from previous steps in this turn:
             {context}
             
-            Use your tools to achieve the goal. Return the final answer clearly and ALWAYS include the source URLs for the information you find.
+            Use your tools to achieve the goal. Return the final answer clearly.
             """
     
             # 4. Invoke the worker
@@ -142,7 +147,8 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
                 "agent": agent_name,
                 "goal": goal,
                 "result": step_result,
-                "citations": unique_urls  # Store extracted citations
+                "citations": unique_urls, # Store extracted citations
+                "id": step_id # CRITICAL: Ensure unique ID maps back to plan
             })
             context += f"\n- {agent_name} found: {step_result}"
             
@@ -171,13 +177,15 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
             results.append({
                 "agent": agent_name,
                 "goal": goal,
-                "error": f"Execution failed: {str(e)}"
+                "error": f"Execution failed: {str(e)}",
+                "id": step_id
             })
             
             # Emit error event
             if queue:
                 await queue.put({
                     "type": "agent_status",
+                    "id": step_id,
                     "agent": agent_name,
                     "name": agent_name,
                     "goal": goal,

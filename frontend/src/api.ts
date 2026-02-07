@@ -36,7 +36,7 @@ export interface MessageOut {
     content: string;
     created_at: string;
     attachments?: { id: string; name: string; type: string; url: string; size: number }[];
-    reasoning?: { steps: { id: string; text: string; status: 'pending' | 'running' | 'complete' }[]; isExpanded?: boolean };
+    reasoning?: { steps: { id: string; text: string; status: 'pending' | 'running' | 'complete' | 'failed' }[]; isExpanded?: boolean };
 }
 
 export interface ConversationDetail {
@@ -149,6 +149,12 @@ export interface AgentResult {
     error?: string;
 }
 
+export interface Citation {
+    id: string;
+    title: string;
+    page?: number;
+}
+
 export interface AgentStreamChunk {
     type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result' | 'citations' | 'plan_created' | 'status';
     content?: string;
@@ -158,9 +164,12 @@ export interface AgentStreamChunk {
     name?: string;
     id?: string;        // Unique step ID
     parent_id?: string; // Parent ID for hiearchy
-    status?: string; // 'starting' | 'running' | 'complete' | 'error' | 'pending'
+    status?: string; // 'starting' | 'running' | 'complete' | 'error' | 'pending' | 'failed'
     goal?: string;   // For agent_status and plan
     data?: any;
+    output?: string;
+    tool_run_id?: string;
+    error?: string; // added this
     citations?: { id: string; title: string; page?: number }[];
     // Plan
     plan?: { agent: string; goal: string; id?: string }[];

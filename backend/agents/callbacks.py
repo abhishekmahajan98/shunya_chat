@@ -6,10 +6,12 @@ from langchain_core.outputs import LLMResult
 class AgentCallbackHandler(AsyncCallbackHandler):
     """Callback handler to stream agent tool usage events to the frontend."""
     
+    
     def __init__(self, queue, agent_name: str, parent_id: Optional[str] = None):
         self.queue = queue
         self.agent_name = agent_name
         self.parent_id = parent_id
+        self.latest_run_ids = {} # Store run_id by tool name
         
     async def on_tool_start(
         self, 
@@ -24,6 +26,7 @@ class AgentCallbackHandler(AsyncCallbackHandler):
     ) -> None:
         """Called when a tool starts running."""
         tool_name = serialized.get("name", "tool")
+        self.latest_run_ids[tool_name] = run_id
         
         # Parse input if it's a JSON string, otherwise use raw
         display_input = input_str
@@ -45,11 +48,13 @@ class AgentCallbackHandler(AsyncCallbackHandler):
                 "name": self.agent_name,
                 "status": "running",
                 "parent_id": self.parent_id,
+                "tool_run_id": str(run_id),
                 "goal": f"Using {tool_name}: {display_input}"
             })
             # Force flush
             import asyncio
             await asyncio.sleep(0.01)
+            print(f"DEBUG: on_tool_start emitted for {tool_name} run_id={run_id}")
 
     async def on_tool_end(
         self, 
@@ -60,6 +65,12 @@ class AgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any
     ) -> None:
         """Called when a tool finishes running."""
+        # Truncate output if it's too long
+        max_length = 500
+        display_output = str(output)
+        if len(display_output) > max_length:
+            display_output = display_output[:max_length] + "... [truncated]"
+
         # Signal completion of the specific tool action
         if self.queue:
              await self.queue.put({
@@ -67,11 +78,15 @@ class AgentCallbackHandler(AsyncCallbackHandler):
                 "agent": self.agent_name,
                 "name": self.agent_name,
                 "status": "complete",
-                "goal": "Tool execution finished" # We use a special marker or just status update
+                "tool_run_id": str(run_id),
+                "goal": "Tool execution finished", # We use a special marker or just status update
+                "output": display_output
             })
              # Force flush
              import asyncio
              await asyncio.sleep(0.01)
+             print(f"DEBUG: on_tool_end emitted for run_id={run_id}")
+
     async def on_tool_error(
         self, 
         error: BaseException, 
@@ -81,10 +96,37 @@ class AgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any
     ) -> None:
         """Called when a tool errors."""
+        print(f"DEBUG: on_tool_error CALLED for run_id={run_id}. Error={error}")
         if self.queue:
              await self.queue.put({
                 "type": "agent_status", 
                 "agent": self.agent_name,
                 "status": "failed",
+                "tool_run_id": str(run_id),
                 "error": str(error)
             })
+
+    async def manual_tool_end(self, tool_name: str, output: Any) -> None:
+        """Manually trigger tool end logic when automatic callbacks fail."""
+        run_id = self.latest_run_ids.get(tool_name)
+        if not run_id:
+            print(f"DEBUG: manual_tool_end could not find run_id for {tool_name}")
+            return
+            
+        print(f"DEBUG: manual_tool_end triggering for {tool_name} run_id={run_id}")
+        
+        # Format output
+        import json
+        output_str = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
+        
+        await self.on_tool_end(output_str, run_id=run_id)
+
+    async def manual_tool_error(self, tool_name: str, error: BaseException) -> None:
+        """Manually trigger tool error logic."""
+        run_id = self.latest_run_ids.get(tool_name)
+        if not run_id:
+            print(f"DEBUG: manual_tool_error could not find run_id for {tool_name}")
+            return
+            
+        print(f"DEBUG: manual_tool_error triggering for {tool_name} run_id={run_id}")
+        await self.on_tool_error(error, run_id=run_id)

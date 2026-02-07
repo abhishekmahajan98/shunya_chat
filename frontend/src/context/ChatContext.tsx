@@ -69,7 +69,7 @@ export interface Citation {
 export interface ReasoningStep {
     id: string;
     text: string;
-    status: 'pending' | 'running' | 'complete';
+    status: 'pending' | 'running' | 'complete' | 'failed';
 }
 
 export interface AsyncTask {

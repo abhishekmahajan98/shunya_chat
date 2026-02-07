@@ -244,7 +244,7 @@ const ChatPage = () => {
     const collectedAgents: string[] = [];
     // Track reasoning steps locally due to closure
     // We define this interface locally to match ReasoningStep but without import issues if specific props differ
-    interface LocalReasoningStep { id: string; text: string; status: 'pending' | 'running' | 'complete' }
+    interface LocalReasoningStep { id: string; text: string; status: 'pending' | 'running' | 'complete' | 'failed' }
     const collectedSteps: LocalReasoningStep[] = [];
 
     if (!selectedModel) return;
@@ -313,55 +313,62 @@ const ChatPage = () => {
             // Agent status update (Plan execution)
             const agentName = chunk.name || chunk.agent || '';
             const goal = chunk.goal || '';
-            const status = chunk.status as 'pending' | 'running' | 'complete' | 'error';
 
             // Use unique ID from backend if available for plan steps
             const planStepId = chunk.id || `agent-${chunk.agent}`;
-            const parentId = chunk.parent_id;
 
-            // Check if this is a Tool Execution Event 
-            const isToolEvent = !!parentId || goal.startsWith('Using ');
-            const isToolComplete = goal === 'Tool execution finished';
+            // Unified Status Determination
+            const status = chunk.status as 'pending' | 'running' | 'complete' | 'failed';
+            const isToolEvent = !!chunk.tool_run_id && status === 'running';
+            const isToolComplete = !!chunk.tool_run_id && status === 'complete';
+            const isToolFailed = !!chunk.tool_run_id && status === 'failed';
 
             if (isToolEvent) {
-              // Creates a new sub-step for the tool usage
-              const toolStepId = `tool-${chunk.agent}-${Date.now()}`;
-              const newToolStep = {
-                id: toolStepId,
-                text: goal,
-                status: 'running' as const
-              };
+              // New Tool Step - Insert as child of current agent step
+              // Find parent agent step (running one)
+              const parentIdx = collectedSteps.findIndex(s => s.status === 'running' && !s.id.startsWith('tool-'));
+              const toolId = `tool-${chunk.tool_run_id || ''}`;
+              const toolText = chunk.goal || '';
 
-              if (parentId) {
-                // Find parent index based on the ID assigned by the router
-                const parentIdx = collectedSteps.findIndex(s => s.id === parentId);
-
-                if (parentIdx >= 0) {
-                  // Insert AFTER parent and its current children (other tools)
-                  let insertIdx = parentIdx + 1;
-                  while (insertIdx < collectedSteps.length && collectedSteps[insertIdx].id.startsWith('tool-')) {
-                    insertIdx++;
-                  }
-                  collectedSteps.splice(insertIdx, 0, newToolStep);
+              // Create tool step if not exists
+              if (!collectedSteps.find(s => s.id === toolId)) {
+                const newToolStep: LocalReasoningStep = { id: toolId, text: toolText, status: 'running' };
+                if (parentIdx >= 0 && parentIdx < collectedSteps.length - 1) {
+                  // Insert after parent
+                  collectedSteps.splice(parentIdx + 1, 0, newToolStep);
                 } else {
-                  // Fallback to end if parent ID mapping fails
                   collectedSteps.push(newToolStep);
                 }
-              } else {
-                // Legacy/fallback append
-                collectedSteps.push(newToolStep);
+              }
+            } else if (isToolComplete || isToolFailed) {
+              // Mark tool step as complete/failed and append output/error
+              let toolIdx = collectedSteps.findIndex(s => s.id === `tool-${chunk.tool_run_id}`);
+
+              if (toolIdx === -1) {
+                // Fallback: Find the last running tool step for this agent
+                toolIdx = collectedSteps.map((s, idx) => ({ s, idx }))
+                  .reverse()
+                  .find(item =>
+                    item.s.id.startsWith('tool-') &&
+                    item.s.status === 'running' &&
+                    item.s.id.includes(`agent-${chunk.agent}`)
+                  )?.idx ?? -1;
               }
 
-            } else if (isToolComplete) {
-              // Determine which tool step to complete
-              // Usually the latest running one for this agent
-              for (let i = collectedSteps.length - 1; i >= 0; i--) {
-                if (collectedSteps[i].id.startsWith('tool-') &&
-                  collectedSteps[i].status === 'running' &&
-                  collectedSteps[i].id.includes(`tool-${chunk.agent}`)) {
-                  collectedSteps[i] = { ...collectedSteps[i], status: 'complete' };
-                  break;
-                }
+              if (toolIdx >= 0) {
+                const currentText = collectedSteps[toolIdx].text;
+                const resultText = isToolFailed ? `Error: ${chunk.error}` : chunk.output;
+
+                // Only append if not already there, and if resultText is not empty
+                const newText = (resultText && !currentText.includes(String(resultText).substring(0, 20)))
+                  ? `${currentText} \n-> ${resultText}`
+                  : currentText;
+
+                collectedSteps[toolIdx] = {
+                  ...collectedSteps[toolIdx],
+                  status: isToolFailed ? 'failed' : 'complete',
+                  text: newText
+                };
               }
             } else {
               // Normal Agent Goal Update (Plan Step)
@@ -374,11 +381,14 @@ const ChatPage = () => {
 
               if (existingStepIndex >= 0) {
                 // Update existing step by its unique ID
+                // Fix status mapping to handle 'failed'
+                const newStatus: 'pending' | 'running' | 'complete' | 'failed' = status;
+
                 collectedSteps[existingStepIndex] = {
                   ...collectedSteps[existingStepIndex],
-                  status: status === 'pending' ? 'pending' : (status === 'complete' ? 'complete' : 'running'),
-                  // Only update text for high-level goal updates
-                  text: (goal && !isToolEvent && !isToolComplete) ? stepText : collectedSteps[existingStepIndex].text
+                  status: newStatus,
+                  // Only update text for high-level goal updates if it's not a tool event or completion
+                  text: (goal && !isToolEvent && !isToolComplete && !isToolFailed) ? stepText : collectedSteps[existingStepIndex].text
                 };
               } else {
                 // New step (e.g. if we missed plan_created)

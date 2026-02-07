@@ -24,6 +24,7 @@ class MCPServerConfig:
     category: str  # research | compliance | finance | automation
     url: str  # HTTP endpoint e.g., "http://localhost:8001"
     capabilities: list[str] = field(default_factory=list)
+    system_prompt: str = ""
     has_access: bool = True
 
 
@@ -35,7 +36,6 @@ class MCPClient:
     def __init__(self):
         self.servers: dict[str, MCPServerConfig] = {}
         self.refresh_servers()
-    
     def refresh_servers(self):
         """Fetch latest server configuration from database."""
         try:
@@ -53,6 +53,7 @@ class MCPClient:
                     category=agent["category"],
                     url=agent["url"],
                     capabilities=agent.get("capabilities", []),
+                    system_prompt=agent.get("system_prompt", ""),
                     has_access=agent.get("has_access", True)
                 )
                 new_servers[server.id] = server
@@ -77,6 +78,7 @@ class MCPClient:
                 "description": server.description,
                 "category": server.category,
                 "url": server.url,
+                "systemPrompt": server.system_prompt,
                 "hasAccess": server.has_access,
             })
         return agents
@@ -144,7 +146,10 @@ class MCPClient:
                             content = content_list[0]
                             if hasattr(content, 'text'):
                                 try:
-                                    return json.loads(content.text)
+                                    parsed = json.loads(content.text)
+                                    if isinstance(parsed, dict):
+                                        return parsed
+                                    return {"status": "success", "result": parsed}
                                 except json.JSONDecodeError:
                                     return {"status": "success", "answer": content.text, "citations": []}
                             return {"status": "success", "result": str(content)}
@@ -188,29 +193,98 @@ class MCPClient:
                     # Capture closure variables for the wrapper
                     t_name = tool_def.name
                     t_desc = tool_def.description or f"Tool: {t_name}"
+                    t_schema = tool_def.inputSchema
 
                     # Define the async wrapper function
                     # We use a closure factory to bind the name correctly
                     def make_wrapper(s_id, t_n):
-                        async def _wrapper(query: str):
+                        async def _wrapper(callbacks=None, **kwargs):
                             # Call the consolidated invoke_tool method
-                            result = await self.invoke_tool(s_id, t_n, {"query": query})
+                            # Removed hardcoded {"query": query}
+                            result = await self.invoke_tool(s_id, t_n, kwargs)
+                            
+                            # Check for errors in result
                             if "error" in result:
-                                return f"Error: {result['error']}"
+                                error_msg = result['error']
+                                
+                                # Manually trigger on_tool_error
+                                if callbacks:
+                                    try:
+                                        from backend.agents.callbacks import AgentCallbackHandler
+                                        for callback in callbacks:
+                                            if isinstance(callback, AgentCallbackHandler):
+                                                await callback.manual_tool_error(t_n, Exception(error_msg))
+                                                break
+                                    except Exception:
+                                         pass
+                                
+                                # Short delay to ensure event is emitted
+                                import asyncio
+                                await asyncio.sleep(0.05)
+                                
+                                # Crash the request/step by raising exception
+                                raise Exception(f"Tool execution failed: {error_msg}")
+
+                            # Success case: Manually trigger on_tool_end
+                            if callbacks:
+                                try:
+                                    # Local import to avoid any potential circular dependency issues during module load
+                                    from backend.agents.callbacks import AgentCallbackHandler
+                                    for callback in callbacks:
+                                        if isinstance(callback, AgentCallbackHandler):
+                                            await callback.manual_tool_end(t_n, result)
+                                            break
+                                        # Fallback for generic handlers
+                                        elif hasattr(callback, "on_tool_end"):
+                                            # We generally skip generic handlers here to avoid duplication if they ARE working
+                                            pass
+                                except Exception:
+                                    pass
+                            
                             return json.dumps(result)
                         return _wrapper
 
-                    # Create the Pydantic input model
-                    # Currently assuming single string input "query" for compatibility
-                    class ToolInput(BaseModel):
-                        query: str = Field(description="The input query or data for this tool")
+                    # Dynamically create the Pydantic input model from JSON Schema
+                    from pydantic import create_model, Field
+                    from typing import Optional, Any, List, Dict
+                    
+                    properties = t_schema.get("properties", {})
+                    required = t_schema.get("required", [])
+                    
+                    fields = {}
+                    for prop_name, prop_info in properties.items():
+                        prop_type = prop_info.get("type", "string")
+                        prop_desc = prop_info.get("description", "")
+                        
+                        # Map JSON schema types to Python types
+                        type_map = {
+                            "string": str,
+                            "number": float,
+                            "integer": int,
+                            "boolean": bool,
+                            "array": list,
+                            "object": dict
+                        }
+                        python_type = type_map.get(prop_type, Any)
+                        
+                        # If not required, wrap in Optional
+                        if prop_name not in required:
+                            python_type = Optional[python_type]
+                            default = None
+                        else:
+                            default = ... 
+                            
+                        fields[prop_name] = (python_type, Field(default=default, description=prop_desc))
+                    
+                    # Create the model class
+                    ToolInputModel = create_model(f"{t_name}Input", **fields)
 
                     langchain_tools.append(
                         StructuredTool.from_function(
                             coroutine=make_wrapper(server_id, t_name),
                             name=t_name,
                             description=t_desc,
-                            args_schema=ToolInput
+                            args_schema=ToolInputModel
                         )
                     )
                 return langchain_tools

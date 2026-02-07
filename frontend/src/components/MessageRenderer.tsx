@@ -1,5 +1,5 @@
 import { useState, useEffect, memo } from 'react';
-import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import type { Message, Citation, ReasoningStep } from '../context/ChatContext';
 import AIResponse from './AIResponse';
 
@@ -215,12 +215,14 @@ const UnifiedReasoningDisplay = ({
                                                     <LoadingOutlined style={{ color: 'var(--color-primary)', fontSize: 10 }} />
                                                 ) : step.status === 'complete' ? (
                                                     <CheckOutlined style={{ color: '#52c41a', fontSize: 10 }} />
+                                                ) : step.status === 'failed' ? (
+                                                    <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 10 }} />
                                                 ) : (
                                                     <div style={{ width: 8, height: 8, borderRadius: '50%', border: '1px solid var(--color-border)' }} />
                                                 )}
                                             </div>
                                             <span style={{
-                                                color: step.status === 'pending' ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+                                                color: step.status === 'pending' ? 'var(--color-text-tertiary)' : (step.status === 'failed' ? '#ff4d4f' : 'var(--color-text-secondary)'),
                                                 opacity: step.status === 'pending' ? 0.7 : 1,
                                             }}>
                                                 {displayText}

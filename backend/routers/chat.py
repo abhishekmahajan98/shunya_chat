@@ -357,12 +357,12 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
 
         async def generate_agent_stream():
             import asyncio
-            stream_queue = asyncio.Queue()
+            stream_queue = asyncio.queue() if hasattr(asyncio, 'queue') else asyncio.Queue()
+            citation_counter = 1 # Sequential ID for citations
 
             async def run_graph_background(): 
                 try:
                     graph = get_agent_graph()
-                    
                     async for event in graph.astream(initial_state, stream_mode="updates", config={"configurable": {"queue": stream_queue}}):
                          for node_name, node_output in event.items():
                             if node_output is None:
@@ -371,21 +371,16 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                             if node_name == "router":
                                 active_agents = node_output.get("active_agents", [])
                                 if active_agents:
-                                    await stream_queue.put({
-                                        "type": "plan_created", 
-                                        "plan": active_agents
-                                    })
-                                    
+                                    await stream_queue.put({"type": "plan_created", "plan": active_agents})
                                     from agents.mcp_client import get_mcp_client
                                     mcp_client = get_mcp_client()
-                                    
                                     for step in active_agents:
                                         agent_id = step.get("agent", "unknown")
                                         server_config = mcp_client.get_server_by_id(agent_id)
                                         agent_name = server_config.name if server_config else agent_id
-                                        
                                         await stream_queue.put({
                                             "type": "agent_status",
+                                            "id": step.get("id") or f"agent-{agent_id}",
                                             "agent": agent_id,
                                             "name": agent_name,
                                             "goal": step.get('goal'),
@@ -395,51 +390,23 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                             elif node_name == "executor":
                                 results = node_output.get("agent_results", [])
                                 for result in results:
-                                    status = 'success'
-                                    data = result.get('result')
-                                    if result.get('error'):
-                                        status = 'error'
-                                        data = result.get('error')
-                                        
-                                    await stream_queue.put({
-                                        "type": "agent_result", 
-                                        "agent": result.get('agent', 'unknown'), 
-                                        "goal": result.get('goal'), 
-                                        "status": status, 
-                                        "data": data
-                                    })
+                                    # SKIP sending agent_result here because it was already streamed by mcp_executor_node
+                                    # to the queue. Sending it again causes duplication in frontend.
                                     
                                     if result.get('citations'):
                                         citation_list = []
                                         nonlocal citation_counter
                                         for url in result['citations']:
-                                            citation_list.append({
-                                                "id": str(citation_counter),
-                                                "title": url,
-                                                "url": url
-                                            })
+                                            citation_list.append({"id": str(citation_counter), "title": url, "url": url})
                                             citation_counter += 1
-                                        await stream_queue.put({
-                                            "type": "citations", 
-                                            "citations": citation_list
-                                        })
+                                        await stream_queue.put({"type": "citations", "citations": citation_list})
 
                             elif node_name == "synthesizer":
-                                needs_synthesis = node_output.get("needs_synthesis", False)
-                                if needs_synthesis:
-                                    synthesis_prompt = node_output.get("synthesis_prompt")
+                                if node_output.get("needs_synthesis", False):
                                     from agents.synthesizer import stream_synthesize
-                                    
-                                    async for chunk in stream_synthesize(synthesis_prompt, request.model):
+                                    async for chunk in stream_synthesize(node_output.get("synthesis_prompt"), request.model):
                                         await stream_queue.put(chunk)
-                                        # Also accumulate for saving to DB later if needed (handled by state update usually, but here we stream)
-                                        # But wait, we need to return the final text to the outer loop or state?
-                                        # The outer loop is just consuming queue.
-                                        # We need to capture final response for DB storage.
                                         if chunk["type"] == "text":
-                                           # We can't easily pass variable back to main scope from here without a mutable object or queue trick.
-                                           # Actually, we can put a special "final_text_accumulator" event or just rely on the consumer to rebuild it?
-                                           # Or simpler: accumulate here and send a final internal event.
                                            await stream_queue.put({"type": "internal_accumulate", "content": chunk["content"]})
                                         elif chunk["type"] == "thinking":
                                            await stream_queue.put({"type": "internal_accumulate_thinking", "content": chunk["content"]})
@@ -447,153 +414,127 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
-                    await stream_queue.put({"type": "error", "error": str(e)})
+                    await stream_queue.put({"type": "error", "content": f"Graph Error: {str(e)}"})
                 finally:
                     await stream_queue.put(None)
 
             asyncio.create_task(run_graph_background())
-            
             yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
             
             thinking_content = ""
             final_response = ""
             collected_results = []
-            reasoning_steps = [] # Accumulate for DB storage
-            citation_counter = 1 # Sequential ID for citations
+            reasoning_steps = []
 
-            while True:
-                item = await stream_queue.get()
-                if item is None:
-                    break
-                
-                # Handle internal signals that shouldn't go to frontend
-                if item.get("type") == "internal_accumulate":
-                    final_response += item.get("content", "")
-                    continue
-                elif item.get("type") == "internal_accumulate_thinking":
-                    thinking_content += item.get("content", "")
-                    continue
-                
-                # Track for DB storage
-                item_type = item.get("type")
-                if item_type == "plan_created":
-                    # Initialize plan steps
-                    for plan_item in item.get("plan", []):
-                        reasoning_steps.append({
-                            "id": plan_item.get("id") or f"agent-{plan_item.get('agent')}",
-                            "text": f"{plan_item.get('agent')}: {plan_item.get('goal')}",
-                            "status": "pending"
-                        })
-                elif item_type == "agent_status":
-                    goal = item.get("goal", "")
-                    status = item.get("status")
-                    agent_id = item.get("agent")
-                    name = item.get("name") or agent_id
-                    parent_id = item.get("parent_id")
-                    unique_id = item.get("id") or f"agent-{agent_id}"
+            try:
+                while True:
+                    item = await stream_queue.get()
+                    if item is None:
+                        break
+                    
+                    if item.get("type") == "internal_accumulate":
+                        final_response += item.get("content", "")
+                        continue
+                    elif item.get("type") == "internal_accumulate_thinking":
+                        thinking_content += item.get("content", "")
+                        continue
+                    
+                    item_type = item.get("type")
+                    if item_type == "plan_created":
+                        for plan_item in item.get("plan", []):
+                            reasoning_steps.append({
+                                "id": plan_item.get("id") or f"agent-{plan_item.get('agent')}",
+                                "text": f"{plan_item.get('agent')}: {plan_item.get('goal')}",
+                                "status": "pending"
+                            })
+                    elif item_type == "agent_status":
+                        goal = item.get("goal", "")
+                        status = item.get("status")
+                        agent_id = item.get("agent")
+                        name = item.get("name") or agent_id
+                        parent_id = item.get("parent_id")
+                        # CRITICAL: Always use the exact same ID format as plan_created
+                        # plan_created uses: f"agent-{plan_item.get('agent')}"
+                        unique_id = item.get("id") or f"agent-{agent_id}"
 
-                    is_tool = bool(parent_id) or goal.startswith("Using ")
-                    is_tool_complete = goal == "Tool execution finished"
+                        is_tool = bool(parent_id) or goal.startswith("Using ")
+                        is_tool_complete = goal == "Tool execution finished"
 
-                    if is_tool:
-                        # Append tool step
-                        tool_step = {
-                            "id": f"tool-{agent_id}-{len(reasoning_steps)}",
-                            "text": goal,
-                            "status": "running"
-                        }
-                        if parent_id:
-                            # Insert after parent
-                            try:
-                                parent_idx = next(i for i, s in enumerate(reasoning_steps) if s["id"] == parent_id)
-                                insert_idx = parent_idx + 1
-                                while insert_idx < len(reasoning_steps) and reasoning_steps[insert_idx]["id"].startswith("tool-"):
-                                    insert_idx += 1
-                                reasoning_steps.insert(insert_idx, tool_step)
-                            except StopIteration:
+                        if is_tool:
+                            tool_run_id = item.get("tool_run_id")
+                            tool_id = f"tool-{tool_run_id}" if tool_run_id else f"tool-{agent_id}-{len(reasoning_steps)}"
+                            tool_step = {"id": tool_id, "text": goal, "status": "running"}
+                            if parent_id:
+                                try:
+                                    parent_idx = next(i for i, s in enumerate(reasoning_steps) if s["id"] == parent_id)
+                                    insert_idx = parent_idx + 1
+                                    while insert_idx < len(reasoning_steps) and reasoning_steps[insert_idx]["id"].startswith("tool-"):
+                                        insert_idx += 1
+                                    reasoning_steps.insert(insert_idx, tool_step)
+                                except StopIteration:
+                                    reasoning_steps.append(tool_step)
+                            else:
                                 reasoning_steps.append(tool_step)
+                        elif is_tool_complete:
+                            tool_run_id = item.get("tool_run_id")
+                            target_id = f"tool-{tool_run_id}" if tool_run_id else None
+                            output = item.get("output")
+                            found = False
+                            if target_id:
+                                for s in reasoning_steps:
+                                    if s["id"] == target_id:
+                                        s["status"] = "complete"
+                                        if output: s["text"] += f" -> {output}"
+                                        found = True
+                                        break
+                            if not found:
+                                for s in reversed(reasoning_steps):
+                                    if s["id"].startswith("tool-") and s["status"] == "running" and f"tool-{agent_id}" in s["id"]:
+                                        s["status"] = "complete"
+                                        if output: s["text"] += f" -> {output}"
+                                        break
                         else:
-                            reasoning_steps.append(tool_step)
-                    elif is_tool_complete:
-                        # Mark tool complete
-                        for s in reversed(reasoning_steps):
-                            if s["id"].startswith("tool-") and s["status"] == "running" and f"tool-{agent_id}" in s["id"]:
-                                s["status"] = "complete"
-                                break
-                    else:
-                        # Update normal agent step
+                            for s in reasoning_steps:
+                                if s["id"] == unique_id:
+                                    if status: s["status"] = status
+                                    if goal and not goal.startswith("Using"):
+                                        s["text"] = f"{name}: {goal}"
+                                    break
+                    elif item_type == "agent_result":
+                        collected_results.append(item)
+                        # CRITICAL: Match plan ID
+                        unique_id = item.get("id") or f"agent-{item.get('agent')}"
                         for s in reasoning_steps:
                             if s["id"] == unique_id:
-                                if status: s["status"] = status
-                                if goal and not goal.startswith("Using"):
-                                    s["text"] = f"{name}: {goal}"
+                                s["status"] = "complete"
+                                if item.get("data"):
+                                    s["text"] += " ✓"
                                 break
-
-                elif item_type == "agent_result":
-                    collected_results.append(item)
-                    unique_id = item.get("id") or f"agent-{item.get('agent')}"
-                    for s in reasoning_steps:
-                        if s["id"] == unique_id:
-                            s["status"] = "complete"
-                            if item.get("data"):
-                                s["text"] += " ✓"
-                            break
                     
-                yield f"data: {json.dumps(item)}\n\n"
-            
-            # Fallback if no agents were triggered
-            if not collected_results and not final_response:
-                 # ... existing fallback logic ...
-                 messages_result = supabase.table("messages")\
-                    .select("*")\
-                    .eq("conversation_id", conversation["id"])\
-                    .order("created_at")\
-                    .execute()
+                    yield f"data: {json.dumps(item)}\n\n"
                 
-                 message_history = []
-                 for msg in messages_result.data:
-                    history_msg = {"role": msg["role"], "content": msg["content"]}
-                    if msg.get("attachments"):
-                        history_msg["attachments"] = msg["attachments"]
-                    message_history.append(history_msg)
-                    
-                 if model_info.provider == "google":
-                    provider = get_gemini_provider()
-                 else:
-                    provider = get_anthropic_provider()
-                     
-                 fallback_text = ""
-                 fallback_thinking = ""
-                 
-                 async for chunk in provider.generate_stream(message_history, request.model):
-                    if chunk.get("type") == "text":
-                        fallback_text += chunk.get("content", "")
-                    elif chunk.get("type") == "thinking":
-                        fallback_thinking += chunk.get("content", "")
-                        
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    
-                 final_response = fallback_text
-                 if fallback_thinking:
-                     thinking_content = fallback_thinking
+                if not collected_results and not final_response:
+                     messages_result = supabase.table("messages").select("*").eq("conversation_id", conversation["id"]).order("created_at").execute()
+                     message_history = [{"role": msg["role"], "content": msg["content"], "attachments": msg.get("attachments")} for msg in messages_result.data]
+                     if model_info.provider == "google": provider = get_gemini_provider()
+                     else: provider = get_anthropic_provider()
+                     async for chunk in provider.generate_stream(message_history, request.model):
+                        if chunk.get("type") == "text": final_response += chunk.get("content", "")
+                        elif chunk.get("type") == "thinking": thinking_content += chunk.get("content", "")
+                        yield f"data: {json.dumps(chunk)}\n\n"
+
+            except Exception as e:
+                import traceback
+                print(f"Error in stream processing loop: {e}")
+                traceback.print_exc()
+                yield f"data: {json.dumps({'type': 'error', 'content': f'Internal Processing Error: {str(e)}'})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
-            # Store message
             if final_response:
-                # If we have hierarchical steps, use them. 
-                # Also include thinking if it exists
                 if thinking_content:
-                    reasoning_steps.append({
-                        "id": "thinking",
-                        "text": thinking_content,
-                        "status": "complete"
-                    })
-
-                reasoning_data = None
-                if reasoning_steps:
-                    reasoning_data = {"steps": reasoning_steps, "isExpanded": True}
-
+                    reasoning_steps.append({"id": "thinking", "text": thinking_content, "status": "complete"})
+                reasoning_data = {"steps": reasoning_steps, "isExpanded": True} if reasoning_steps else None
                 assistant_message = {
                     "id": str(uuid.uuid4()),
                     "conversation_id": conversation["id"],

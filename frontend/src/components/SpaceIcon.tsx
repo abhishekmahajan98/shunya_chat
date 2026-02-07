@@ -54,6 +54,7 @@ import {
     CarryOutOutlined,
     ScheduleOutlined,
     SearchOutlined,
+    CalculatorOutlined,
 } from '@ant-design/icons';
 
 // Icon name to component mapping
@@ -112,6 +113,7 @@ export const spaceIconMap: Record<string, React.ComponentType<{ style?: React.CS
     'carry-out': CarryOutOutlined,
     schedule: ScheduleOutlined,
     search: SearchOutlined,
+    calculator: CalculatorOutlined,
     read: FileTextOutlined,
     warning: SafetyOutlined,
     robot: SettingOutlined,
