@@ -309,6 +309,87 @@ const ChatPage = () => {
               reasoning: { steps: [...collectedSteps], isExpanded: true }
             });
 
+          } else if (chunk.type === 'tool_start') {
+            const toolId = `tool-${chunk.tool_run_id}`;
+            const toolName = chunk.tool_name || chunk.name || 'Tool';
+            const inputVal = chunk.input || '';
+            const toolText = `Using ${toolName}: ${inputVal}`;
+
+            // Create step
+            const newToolStep: LocalReasoningStep = {
+              id: toolId,
+              text: toolText,
+              status: 'running'
+            };
+
+            // Find parent
+            let parentIdx = -1;
+            if (chunk.parent_id) {
+              parentIdx = collectedSteps.findIndex(s => s.id === chunk.parent_id);
+            }
+            // Fallback
+            if (parentIdx === -1) {
+              parentIdx = collectedSteps.findIndex(s => s.status === 'running' && !s.id.startsWith('tool-'));
+            }
+
+            if (parentIdx >= 0) {
+              // Insert after parent and its existing children
+              let insertIdx = parentIdx + 1;
+              while (insertIdx < collectedSteps.length && collectedSteps[insertIdx].id.startsWith('tool-')) {
+                insertIdx++;
+              }
+              collectedSteps.splice(insertIdx, 0, newToolStep);
+            } else {
+              collectedSteps.push(newToolStep);
+            }
+
+            updateMessage(assistantMsgId, {
+              type: 'reasoning',
+              reasoning: { steps: [...collectedSteps], isExpanded: true }
+            });
+
+          } else if (chunk.type === 'tool_end') {
+            const toolId = `tool-${chunk.tool_run_id}`;
+            const toolIdx = collectedSteps.findIndex(s => s.id === toolId);
+
+            if (toolIdx >= 0) {
+              const currentText = collectedSteps[toolIdx].text;
+              const output = chunk.output;
+              const newText = output ? `${currentText} \n-> ${output}` : currentText;
+
+              collectedSteps[toolIdx] = {
+                ...collectedSteps[toolIdx],
+                status: 'complete',
+                text: newText
+              };
+
+              updateMessage(assistantMsgId, {
+                type: 'reasoning',
+                reasoning: { steps: [...collectedSteps], isExpanded: true }
+              });
+            }
+
+          } else if (chunk.type === 'tool_error') {
+            const toolId = `tool-${chunk.tool_run_id}`;
+            const toolIdx = collectedSteps.findIndex(s => s.id === toolId);
+
+            if (toolIdx >= 0) {
+              const currentText = collectedSteps[toolIdx].text;
+              const error = chunk.error;
+              const newText = error ? `${currentText} \n(Error: ${error})` : currentText;
+
+              collectedSteps[toolIdx] = {
+                ...collectedSteps[toolIdx],
+                status: 'failed',
+                text: newText
+              };
+
+              updateMessage(assistantMsgId, {
+                type: 'reasoning',
+                reasoning: { steps: [...collectedSteps], isExpanded: true }
+              });
+            }
+
           } else if (chunk.type === 'agent_status') {
             // Agent status update (Plan execution)
             const agentName = chunk.name || chunk.agent || '';
@@ -319,14 +400,22 @@ const ChatPage = () => {
 
             // Unified Status Determination
             const status = chunk.status as 'pending' | 'running' | 'complete' | 'failed';
-            const isToolEvent = !!chunk.tool_run_id && status === 'running';
-            const isToolComplete = !!chunk.tool_run_id && status === 'complete';
-            const isToolFailed = !!chunk.tool_run_id && status === 'failed';
+            const isToolEvent = false; // Handled by tool_start
+            const isToolComplete = false; // Handled by tool_end
+            const isToolFailed = false; // Handled by tool_error
 
             if (isToolEvent) {
               // New Tool Step - Insert as child of current agent step
               // Find parent agent step (running one)
-              const parentIdx = collectedSteps.findIndex(s => s.status === 'running' && !s.id.startsWith('tool-'));
+              let parentIdx = -1;
+              if (chunk.parent_id) {
+                parentIdx = collectedSteps.findIndex(s => s.id === chunk.parent_id);
+              }
+
+              if (parentIdx === -1) {
+                // Fallback: Find the last running agent step (non-tool)
+                parentIdx = collectedSteps.findIndex(s => s.status === 'running' && !s.id.startsWith('tool-'));
+              }
               const toolId = `tool-${chunk.tool_run_id || ''}`;
               const toolText = chunk.goal || '';
 
@@ -340,20 +429,8 @@ const ChatPage = () => {
                   collectedSteps.push(newToolStep);
                 }
               }
-            } else if (isToolComplete || isToolFailed) {
               // Mark tool step as complete/failed and append output/error
               let toolIdx = collectedSteps.findIndex(s => s.id === `tool-${chunk.tool_run_id}`);
-
-              if (toolIdx === -1) {
-                // Fallback: Find the last running tool step for this agent
-                toolIdx = collectedSteps.map((s, idx) => ({ s, idx }))
-                  .reverse()
-                  .find(item =>
-                    item.s.id.startsWith('tool-') &&
-                    item.s.status === 'running' &&
-                    item.s.id.includes(`agent-${chunk.agent}`)
-                  )?.idx ?? -1;
-              }
 
               if (toolIdx >= 0) {
                 const currentText = collectedSteps[toolIdx].text;

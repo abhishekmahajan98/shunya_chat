@@ -386,6 +386,9 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                                             "goal": step.get('goal'),
                                             "status": "pending"
                                         })
+                                else:
+                                    # Emit empty plan to close the "Analyzing..." step in UI
+                                    await stream_queue.put({"type": "plan_created", "plan": []})
 
                             elif node_name == "executor":
                                 results = node_output.get("agent_results", [])
@@ -447,59 +450,73 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                                 "text": f"{plan_item.get('agent')}: {plan_item.get('goal')}",
                                 "status": "pending"
                             })
+                    elif item_type == "tool_start":
+                        tool_run_id = item.get("tool_run_id")
+                        # Create unique ID for the tool step
+                        tool_id = f"tool-{tool_run_id}" if tool_run_id else f"tool-{uuid.uuid4()}"
+                        tool_name = item.get("tool_name", "Tool")
+                        input_val = item.get("input", "")
+                        text = f"Using {tool_name}: {input_val}"
+                        
+                        tool_step = {"id": tool_id, "text": text, "status": "running"}
+                        parent_id = item.get("parent_id")
+                        
+                        if parent_id:
+                            try:
+                                # Find parent index
+                                parent_idx = next(i for i, s in enumerate(reasoning_steps) if s["id"] == parent_id)
+                                # Insert after parent and any existing tool children
+                                insert_idx = parent_idx + 1
+                                while insert_idx < len(reasoning_steps) and reasoning_steps[insert_idx]["id"].startswith("tool-"):
+                                    insert_idx += 1
+                                reasoning_steps.insert(insert_idx, tool_step)
+                            except StopIteration:
+                                # Parent not found, append
+                                reasoning_steps.append(tool_step)
+                        else:
+                             reasoning_steps.append(tool_step)
+
+                    elif item_type == "tool_end":
+                         tool_run_id = item.get("tool_run_id")
+                         target_id = f"tool-{tool_run_id}" if tool_run_id else None
+                         output = item.get("output")
+                         
+                         if target_id:
+                             for s in reasoning_steps:
+                                 if s["id"] == target_id:
+                                     s["status"] = "complete"
+                                     if output: s["text"] += f" -> {output}"
+                                     break
+                    
+                    elif item_type == "tool_error":
+                         tool_run_id = item.get("tool_run_id")
+                         target_id = f"tool-{tool_run_id}" if tool_run_id else None
+                         error = item.get("error")
+                         
+                         if target_id:
+                             for s in reasoning_steps:
+                                 if s["id"] == target_id:
+                                     s["status"] = "failed"
+                                     if error: s["text"] += f" (Error: {error})"
+                                     break
+
                     elif item_type == "agent_status":
+                        # Only handles AGENT status updates (running -> complete/failed)
+                        # No tool logic here anymore.
                         goal = item.get("goal", "")
                         status = item.get("status")
                         agent_id = item.get("agent")
                         name = item.get("name") or agent_id
-                        parent_id = item.get("parent_id")
-                        # CRITICAL: Always use the exact same ID format as plan_created
-                        # plan_created uses: f"agent-{plan_item.get('agent')}"
+                        
+                        # Use same ID format as plan_created
                         unique_id = item.get("id") or f"agent-{agent_id}"
 
-                        is_tool = bool(parent_id) or goal.startswith("Using ")
-                        is_tool_complete = goal == "Tool execution finished"
-
-                        if is_tool:
-                            tool_run_id = item.get("tool_run_id")
-                            tool_id = f"tool-{tool_run_id}" if tool_run_id else f"tool-{agent_id}-{len(reasoning_steps)}"
-                            tool_step = {"id": tool_id, "text": goal, "status": "running"}
-                            if parent_id:
-                                try:
-                                    parent_idx = next(i for i, s in enumerate(reasoning_steps) if s["id"] == parent_id)
-                                    insert_idx = parent_idx + 1
-                                    while insert_idx < len(reasoning_steps) and reasoning_steps[insert_idx]["id"].startswith("tool-"):
-                                        insert_idx += 1
-                                    reasoning_steps.insert(insert_idx, tool_step)
-                                except StopIteration:
-                                    reasoning_steps.append(tool_step)
-                            else:
-                                reasoning_steps.append(tool_step)
-                        elif is_tool_complete:
-                            tool_run_id = item.get("tool_run_id")
-                            target_id = f"tool-{tool_run_id}" if tool_run_id else None
-                            output = item.get("output")
-                            found = False
-                            if target_id:
-                                for s in reasoning_steps:
-                                    if s["id"] == target_id:
-                                        s["status"] = "complete"
-                                        if output: s["text"] += f" -> {output}"
-                                        found = True
-                                        break
-                            if not found:
-                                for s in reversed(reasoning_steps):
-                                    if s["id"].startswith("tool-") and s["status"] == "running" and f"tool-{agent_id}" in s["id"]:
-                                        s["status"] = "complete"
-                                        if output: s["text"] += f" -> {output}"
-                                        break
-                        else:
-                            for s in reasoning_steps:
-                                if s["id"] == unique_id:
-                                    if status: s["status"] = status
-                                    if goal and not goal.startswith("Using"):
-                                        s["text"] = f"{name}: {goal}"
-                                    break
+                        for s in reasoning_steps:
+                            if s["id"] == unique_id:
+                                if status: s["status"] = status
+                                if goal and not goal.startswith("Using"):
+                                    s["text"] = f"{name}: {goal}"
+                                break
                     elif item_type == "agent_result":
                         collected_results.append(item)
                         # CRITICAL: Match plan ID

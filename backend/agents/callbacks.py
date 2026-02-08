@@ -43,13 +43,13 @@ class AgentCallbackHandler(AsyncCallbackHandler):
             
         if self.queue:
             await self.queue.put({
-                "type": "agent_status",
+                "type": "tool_start",
                 "agent": self.agent_name,
                 "name": self.agent_name,
-                "status": "running",
+                "tool_name": tool_name,
+                "input": display_input,
                 "parent_id": self.parent_id,
-                "tool_run_id": str(run_id),
-                "goal": f"Using {tool_name}: {display_input}"
+                "tool_run_id": str(run_id)
             })
             # Force flush
             import asyncio
@@ -65,6 +65,9 @@ class AgentCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any
     ) -> None:
         """Called when a tool finishes running."""
+        if not run_id:
+            return
+
         # Truncate output if it's too long
         max_length = 500
         display_output = str(output)
@@ -74,12 +77,8 @@ class AgentCallbackHandler(AsyncCallbackHandler):
         # Signal completion of the specific tool action
         if self.queue:
              await self.queue.put({
-                "type": "agent_status", 
-                "agent": self.agent_name,
-                "name": self.agent_name,
-                "status": "complete",
+                "type": "tool_end",
                 "tool_run_id": str(run_id),
-                "goal": "Tool execution finished", # We use a special marker or just status update
                 "output": display_output
             })
              # Force flush
@@ -99,9 +98,7 @@ class AgentCallbackHandler(AsyncCallbackHandler):
         print(f"DEBUG: on_tool_error CALLED for run_id={run_id}. Error={error}")
         if self.queue:
              await self.queue.put({
-                "type": "agent_status", 
-                "agent": self.agent_name,
-                "status": "failed",
+                "type": "tool_error",
                 "tool_run_id": str(run_id),
                 "error": str(error)
             })

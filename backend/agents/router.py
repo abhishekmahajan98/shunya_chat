@@ -5,6 +5,7 @@ Acts as a Supervisor that delegates tasks to worker agents.
 """
 import json
 import os
+import uuid
 from .state import AgentState, AgentGoal
 from .mcp_client import get_mcp_client
 from config import settings, AgentModels
@@ -152,11 +153,11 @@ async def supervisor_node(state: AgentState, config: RunnableConfig) -> dict:
         if user_active_agents is not None:
              for i, step in enumerate(plan):
                  if step["agent"] in user_active_agents:
-                     step["id"] = f"step-{i+1}"
+                     step["id"] = str(uuid.uuid4())
                      valid_plan.append(step)
         else:
             for i, step in enumerate(plan):
-                step["id"] = f"step-{i+1}"
+                step["id"] = str(uuid.uuid4())
                 valid_plan.append(step)
 
         if queue:

@@ -156,7 +156,7 @@ export interface Citation {
 }
 
 export interface AgentStreamChunk {
-    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result' | 'citations' | 'plan_created' | 'status';
+    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'agent_status' | 'agent_result' | 'citations' | 'plan_created' | 'status' | 'tool_start' | 'tool_end' | 'tool_error';
     content?: string;
     conversation_id?: string;
     // Agent-specific fields
@@ -169,6 +169,8 @@ export interface AgentStreamChunk {
     data?: any;
     output?: string;
     tool_run_id?: string;
+    tool_name?: string;
+    input?: string;
     error?: string; // added this
     citations?: { id: string; title: string; page?: number }[];
     // Plan

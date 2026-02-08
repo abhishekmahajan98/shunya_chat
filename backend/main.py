@@ -31,3 +31,5 @@ app.include_router(auth_router)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+# Trigger reload for explicit events refactor
