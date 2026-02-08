@@ -6,6 +6,7 @@ Acts as a Supervisor that delegates tasks to worker agents.
 import json
 import os
 import uuid
+from datetime import datetime
 from .state import AgentState, AgentGoal
 from .mcp_client import get_mcp_client
 from config import settings, AgentModels
@@ -108,8 +109,9 @@ async def supervisor_node(state: AgentState, config: RunnableConfig) -> dict:
         user_message=user_message
     )
     
-    # Prepend history to prompt to give context
-    full_prompt = f"Chat History:\n{chat_history}\n\n{prompt}"
+    # Prepend history and date to prompt to give context
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    full_prompt = f"Current Date: {current_date}\n\nChat History:\n{chat_history}\n\n{prompt}"
     
     try:
         if AgentModels.SUPERVISOR_PROVIDER == "google":

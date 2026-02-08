@@ -3,6 +3,7 @@ Hierarchical Agent Graph.
 Orchestrates a Supervisor (Router) and Worker Agents (ReAct loops).
 """
 import os
+from datetime import datetime
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -106,8 +107,12 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
             agent_config = mcp_client.get_server_by_id(agent_name)
             system_prompt = agent_config.system_prompt if agent_config else ""
             
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            
             worker_input = f"""
             {system_prompt}
+            
+            Current Date: {current_date}
             
             You are the '{agent_name}' specialist.
             
