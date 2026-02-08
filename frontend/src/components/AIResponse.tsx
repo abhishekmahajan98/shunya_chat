@@ -342,6 +342,16 @@ const processText = (children: React.ReactNode): React.ReactNode => {
 
 // Main AI Response Component
 const AIResponse = ({ content, compact = false }: AIResponseProps) => {
+    // Pre-process content to escape dollar signs that are likely currency
+    // This prevents "$1.00 ... $2.00" being interpreted as a math block whic swallows spaces
+    // Regex: Match $ followed by digits/dots/commas
+    // Negative Lookahead 1: (?![\d.,]) Ensure we consumed the full number (prevent backtracking to partial match)
+    // Negative Lookahead 2: (?![\s]*[\\^=_{}]) Ensure NOT followed by math symbols even with spaces
+    const processedContent = React.useMemo(() => {
+        if (!content) return '';
+        return content.replace(/\$(\d[\d.,]*)(?![\d.,])(?![\s]*[\\^=_{}])/g, '\\$$$1');
+    }, [content]);
+
     return (
         <div className={`ai-response ${compact ? 'compact' : ''}`} style={{ lineHeight: compact ? 1.5 : 1.6, fontSize: compact ? 13 : undefined }}>
             <ReactMarkdown
@@ -549,7 +559,7 @@ const AIResponse = ({ content, compact = false }: AIResponseProps) => {
                     },
                 }}
             >
-                {content}
+                {processedContent}
             </ReactMarkdown>
         </div>
     );

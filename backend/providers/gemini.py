@@ -63,11 +63,17 @@ class GeminiProvider(LLMProvider):
         config = GenerateContentConfig(**config_kwargs)
         
         # Use async context manager for proper streaming
-        async for chunk in await self.client.aio.models.generate_content_stream(
+        response_stream = await self.client.aio.models.generate_content_stream(
             model=model_id,
             contents=contents,
             config=config
-        ):
+        )
+        
+        if response_stream is None:
+            yield {"type": "error", "content": "Gemini stream initialization failed (returned None)."}
+            return
+
+        async for chunk in response_stream:
             if not chunk.candidates:
                 continue
             

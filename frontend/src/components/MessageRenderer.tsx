@@ -51,7 +51,7 @@ const AgentBadge = ({ agentId }: { agentId: string }) => {
 };
 
 // Copy Button Component
-const CopyButton = ({ text }: { text: string }) => {
+const CopyButton = ({ text, color }: { text: string, color?: string }) => {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = () => {
@@ -67,7 +67,7 @@ const CopyButton = ({ text }: { text: string }) => {
             style={{
                 background: 'transparent',
                 border: 'none',
-                color: copied ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                color: copied ? (color || 'var(--color-text)') : (color || 'var(--color-text-secondary)'),
                 cursor: copied ? 'default' : 'pointer',
                 padding: '4px 8px',
                 display: 'flex',
@@ -80,14 +80,14 @@ const CopyButton = ({ text }: { text: string }) => {
             onMouseEnter={(e) => {
                 if (!copied) {
                     e.currentTarget.style.opacity = '1';
-                    e.currentTarget.style.color = 'var(--color-primary)';
+                    e.currentTarget.style.color = color || 'var(--color-primary)';
                     e.currentTarget.style.background = 'var(--color-surface-hover)';
                 }
             }}
             onMouseLeave={(e) => {
                 if (!copied) {
                     e.currentTarget.style.opacity = '0.6';
-                    e.currentTarget.style.color = 'var(--color-text-secondary)';
+                    e.currentTarget.style.color = color || 'var(--color-text-secondary)';
                     e.currentTarget.style.background = 'transparent';
                 }
             }}
@@ -95,7 +95,7 @@ const CopyButton = ({ text }: { text: string }) => {
         >
             {copied ? (
                 <span style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
-                    <CheckOutlined style={{ color: 'var(--color-primary)' }} /> Copied to clipboard
+                    <CheckOutlined style={{ color: color || 'var(--color-primary)' }} />
                 </span>
             ) : (
                 <CopyOutlined />
@@ -566,6 +566,18 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
 
                 {/* Message content - use AIResponse for AI, plain text for user */}
                 {isUser ? message.content : <AIResponse content={message.content} />}
+
+                {/* User Footer with Copy Button */}
+                {isUser && (
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        marginTop: 4,
+                        opacity: 0.8
+                    }}>
+                        <CopyButton text={message.content} color="inherit" />
+                    </div>
+                )}
 
                 {/* Footer and Citations - only for AI */}
                 {!isUser && (

@@ -26,6 +26,7 @@ Guidelines:
 - DO NOT list the sources/references at the end of your response. The user interface displays them automatically.
 - Be concise but thorough
 - If agents returned errors, acknowledge them gracefully
+- Do NOT use LaTeX mathematics formatting (wrapping text in $) for currency or standard text. Only use it for complex formulas. Write "$100", NOT "$100$".
 """
 
 
@@ -161,6 +162,10 @@ async def _stream_gemini(prompt: str, model: str) -> AsyncGenerator[dict, None]:
                 config=config
             )
             
+            if response_stream is None:
+                yield {"type": "text", "content": "Error: Gemini stream initialization failed."}
+                return
+
             async for response in response_stream:
                 if response.candidates:
                     candidate = response.candidates[0]
