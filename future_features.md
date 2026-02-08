@@ -58,3 +58,28 @@ User: ...
 AI: ...
 User: [Current Message]
 ```
+
+## 2. MCP Apps (Interactive UIs)
+
+**Goal**: Transform Shunya Chat from a text-based interface into a rich app platform by supporting the official Model Context Protocol (MCP) Apps extension. This allows agents to render sandboxed, interactive UIs directly in the chat.
+
+### The Architecture
+
+#### A. Tool-Driven UI Preloading
+*   Agents can include a `_meta.ui.resourceUri` in their tool definitions.
+*   This points to a `ui://` resource on the MCP server.
+*   The frontend can preload these assets (HTML/JS/CSS) before the tool is even executed.
+
+#### B. Sandboxed Rendering (Modern Artifacts)
+*   UIs are rendered in a secure, sandboxed `<iframe>`.
+*   Supports permissions for hardware access (camera, microphone) and custom Content Security Policies (CSP).
+
+#### C. Bidirectional Communication
+*   **JSON-RPC Protocol**: The app inside the iframe communicates with the host (Shunya Chat) using the `ui/` method prefix.
+*   **Tool-Triggered UI**: The host can push tool results directly to the app via `app.ontoolresult`.
+*   **App-Triggered Tools**: The UI can proactively call server tools via `app.callServerTool()`, enabling "app-like" experiences (e.g., a "Get Time" button in a clock widget).
+
+### Benefits
+- **Zero-Config UIs**: Developers only need to write a standard HTML/JS bundle for their MCP server.
+- **Rich Visualization**: Seamlessly render charts, complex forms, or 3D viewports.
+- **Micro-App Platform**: Effectively turns Shunya Chat into an operating system for AI agents.

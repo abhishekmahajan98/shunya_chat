@@ -55,7 +55,7 @@ async def search(query: str) -> dict:
                         {"role": "user", "content": query}
                     ]
                 },
-                timeout=30.0
+                timeout=90.0
             )
             
             if response.status_code == 200:

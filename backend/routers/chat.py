@@ -544,6 +544,10 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                     "reasoning": reasoning_data,
                 }
                 supabase.table("messages").insert(assistant_message).execute()
+
+                # Update title if first message
+                if len(history_result.data) == 1:
+                    background_tasks.add_task(generate_title, conversation["id"], request.content)
                 
         return StreamingResponse(
             generate_agent_stream(),

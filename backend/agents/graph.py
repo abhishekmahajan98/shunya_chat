@@ -137,6 +137,22 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
             final_message = worker_response["messages"][-1]
             step_result = final_message.content
             
+            # Ensure step_result is a string for regex
+            if isinstance(step_result, list):
+                # If content is a list of blocks (e.g. text, images), extract text
+                text_parts = []
+                for part in step_result:
+                    if isinstance(part, str):
+                        text_parts.append(part)
+                    elif isinstance(part, dict):
+                         if "text" in part:
+                             text_parts.append(part["text"])
+                         elif "type" in part and part["type"] == "text":
+                             text_parts.append(part.get("text", ""))
+                step_result = "\n".join(text_parts)
+            elif not isinstance(step_result, str):
+                step_result = str(step_result)
+            
             # Extract URLs for citations
             import re
             urls = re.findall(r'(https?://[^\s)]+)', step_result)

@@ -140,21 +140,50 @@ class MCPClient:
                 
                 # FastMCP returns a CallToolResult object with a 'content' attribute
                 if result is not None:
-                    if hasattr(result, 'content') and result.content:
-                        content_list = result.content
-                        if len(content_list) > 0:
-                            content = content_list[0]
-                            if hasattr(content, 'text'):
-                                try:
-                                    parsed = json.loads(content.text)
-                                    if isinstance(parsed, dict):
-                                        return parsed
-                                    return {"status": "success", "result": parsed}
-                                except json.JSONDecodeError:
-                                    return {"status": "success", "answer": content.text, "citations": []}
-                            return {"status": "success", "result": str(content)}
+                    final_result = {"status": "success", "results": []}
                     
-                return {"status": "error", "error": "Empty response from tool"}
+                    # Handle metadata if present (e.g. _meta.ui for interactive apps)
+                    # Safe check for common metadata patterns in MCP
+                    msg_meta = getattr(result, "_meta", None) or getattr(result, "meta", None)
+                    if msg_meta:
+                        final_result["_meta"] = msg_meta
+
+                    if hasattr(result, 'content') and result.content:
+                        for content in result.content:
+                            if hasattr(content, 'type') and content.type == "text" or hasattr(content, 'text'):
+                                text_val = getattr(content, 'text', "")
+                                try:
+                                    parsed = json.loads(text_val)
+                                    final_result["results"].append(parsed)
+                                except (json.JSONDecodeError, TypeError):
+                                    final_result["results"].append(text_val)
+                            elif hasattr(content, 'type') and content.type == "image" or hasattr(content, 'data'):
+                                # Handle binary/image data as best we can for text-based context
+                                data_val = getattr(content, 'data', "")
+                                final_result["results"].append({
+                                    "type": "binary_data",
+                                    "format": getattr(content, 'mime_type', 'unknown'),
+                                    "label": "Asset Data (truncated)",
+                                    "preview": str(data_val)[:100] + "..." if data_val else ""
+                                })
+                            else:
+                                final_result["results"].append(str(content))
+                        
+                        # Backward compatibility: if only one result, provide it directly at top level
+                        # to avoid breaking simple downstream synthesis that expects 'answer' or dict
+                        if len(final_result["results"]) == 1:
+                            item = final_result["results"][0]
+                            if isinstance(item, dict):
+                                # Merge into final_result
+                                for k, v in item.items():
+                                    if k not in final_result:
+                                        final_result[k] = v
+                            else:
+                                final_result["answer"] = item
+                        
+                        return final_result
+                    
+                return {"status": "error", "error": "No content returned from tool"}
                 
         except Exception as e:
             import traceback
