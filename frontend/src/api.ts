@@ -189,6 +189,7 @@ export interface AgentInfo {
     url: string;
     hasAccess: boolean;
     isFavorite: boolean;
+    capabilities: string[];
 }
 
 /**
@@ -303,6 +304,7 @@ export interface RegisterAgentRequest {
     description: string;
     category: AgentCategory;
     url: string;
+    capabilities: string[];
 }
 
 /**

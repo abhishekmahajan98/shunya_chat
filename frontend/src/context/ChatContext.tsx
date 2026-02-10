@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { toggleAgentFavorite as apiToggleFavorite, getConversations, getConversation, type ConversationSummary } from '../api';
+import { toggleAgentFavorite as apiToggleFavorite, getConversations, getConversation, getSpaces, getAgents, type ConversationSummary } from '../api';
 import { useAuth } from './AuthContext';
 
 // Types
@@ -54,6 +54,7 @@ export interface Agent {
     isActive: boolean;
     isBackground?: boolean;
     hasAccess: boolean;
+    capabilities: string[];
 }
 
 export interface ScopeSelection {
@@ -122,9 +123,9 @@ interface ChatContextType {
     spaces: Space[];
     selectedScope: ScopeSelection | null;
     setSelectedScope: (scope: ScopeSelection | null) => void;
+    isLoadingSpaces: boolean;
+    isLoadingAgents: boolean;
     toggleSpacePin: (spaceId: string) => void;
-    spaceSearch: string;
-    setSpaceSearch: (search: string) => void;
 
     // Space Management
     addSpaceMember: (spaceId: string, userId: string, role: MemberRole) => void;
@@ -162,6 +163,7 @@ interface ChatContextType {
     isLoadingHistory: boolean;
     hasMoreHistory: boolean;
     refreshHistory: () => Promise<void>;
+    refreshAllData: () => Promise<void>;
     loadMoreHistory: () => Promise<void>;
     loadConversation: (id: string) => Promise<void>;
 
@@ -181,8 +183,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Spaces state
     const [spaces, setSpaces] = useState<Space[]>([]);
+    const [isLoadingSpaces, setIsLoadingSpaces] = useState(false);
+    const [isLoadingAgents, setIsLoadingAgents] = useState(false);
     const [selectedScope, setSelectedScope] = useState<ScopeSelection | null>(null);
-    const [spaceSearch, setSpaceSearch] = useState('');
 
     // Agents state
     const [agents, setAgents] = useState<Agent[]>([]);
@@ -217,8 +220,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }
     };
 
-    const fetchInitialData = async () => {
-        const { getSpaces, getAgents } = await import('../api');
+    const refreshAllData = async () => {
+        setIsLoadingHistory(true);
+        setIsLoadingSpaces(true);
+        setIsLoadingAgents(true);
 
         // 1. Fetch Spaces
         try {
@@ -236,6 +241,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             setSpaces(mappedSpaces);
         } catch (error) {
             console.error('Failed to fetch spaces:', error);
+        } finally {
+            setIsLoadingSpaces(false);
         }
 
         // 2. Fetch Agents
@@ -250,10 +257,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 isFavorite: a.isFavorite,
                 isActive: false,
                 hasAccess: a.hasAccess,
+                capabilities: a.capabilities || [],
             }));
             setAgents(mergedAgents);
         } catch (error) {
             console.error('Failed to fetch agents:', error);
+        } finally {
+            setIsLoadingAgents(false);
         }
 
         // 3. Refresh history
@@ -262,7 +272,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     useEffect(() => {
         if (isAuthenticated) {
-            fetchInitialData();
+            refreshAllData();
         }
     }, [isAuthenticated]);
 
@@ -348,7 +358,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         try {
             const { uploadDocumentToSpace } = await import('../api');
             await uploadDocumentToSpace(spaceId, file, parentId);
-            await fetchInitialData();
+            await refreshAllData();
         } catch (error) {
             console.error('Failed to upload document:', error);
             throw error;
@@ -359,7 +369,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         try {
             const { createFolder: apiCreateFolder } = await import('../api');
             await apiCreateFolder(spaceId, name, parentId);
-            await fetchInitialData();
+            await refreshAllData();
         } catch (error) {
             console.error('Failed to create folder:', error);
             throw error;
@@ -370,7 +380,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         try {
             const { deleteDocument } = await import('../api');
             await deleteDocument(spaceId, documentId);
-            await fetchInitialData();
+            await refreshAllData();
         } catch (error) {
             console.error('Failed to remove document:', error);
             throw error;
@@ -432,11 +442,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         <ChatContext.Provider
             value={{
                 spaces,
+                isLoadingSpaces,
                 selectedScope,
                 setSelectedScope,
                 toggleSpacePin,
-                spaceSearch,
-                setSpaceSearch,
                 addSpaceMember,
                 removeSpaceMember,
                 updateMemberRole,
@@ -446,6 +455,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 removeDocumentFromSpace,
                 updateSpace,
                 agents,
+                isLoadingAgents,
                 toggleAgent,
                 toggleAgentFavorite,
                 activeAgents,
@@ -467,6 +477,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 isLoadingHistory,
                 hasMoreHistory,
                 refreshHistory,
+                refreshAllData,
                 loadMoreHistory,
                 loadConversation,
                 sidebarTab,

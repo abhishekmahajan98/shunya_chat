@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Typography, Switch, Input } from 'antd';
+import { Typography, Switch, Input, Skeleton, Modal, Divider, Tag, Button } from 'antd';
 import {
   SearchOutlined,
   StarOutlined,
@@ -10,6 +10,7 @@ import {
   ShrinkOutlined,
   RightOutlined,
   AppstoreOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import { useChat, type Agent, type AgentCategory } from '../context/ChatContext';
 import SpaceIcon from './SpaceIcon';
@@ -34,11 +35,13 @@ const AgentCard = ({
   onToggle,
   onToggleFavorite,
   onRequestAccess,
+  onShowInfo,
 }: {
   agent: Agent;
   onToggle: () => void;
   onToggleFavorite: () => void;
   onRequestAccess: () => void;
+  onShowInfo: () => void;
 }) => {
   const handleRequest = () => {
     onRequestAccess();
@@ -57,7 +60,7 @@ const AgentCard = ({
     <div
       style={{
         display: 'flex',
-        alignItems: 'center', // Align center vertically
+        alignItems: 'center',
         gap: 10,
         padding: '12px',
         borderRadius: 10,
@@ -68,7 +71,9 @@ const AgentCard = ({
         cursor: agent.hasAccess ? 'pointer' : 'default',
         opacity: agent.hasAccess ? 1 : 0.7,
       }}
-      onClick={agent.hasAccess ? onToggle : undefined}
+      onClick={() => {
+        onShowInfo();
+      }}
     >
       <div style={{
         width: 36,
@@ -82,7 +87,7 @@ const AgentCard = ({
         flexShrink: 0,
         transition: 'all 0.2s ease',
         position: 'relative',
-        color: agent.isActive ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)', // Ensure icon color consistency
+        color: agent.isActive ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
       }}>
         <SpaceIcon icon={agent.icon} style={{ fontSize: 18, color: 'inherit' }} />
         {agent.isBackground && (
@@ -196,11 +201,13 @@ const AgentTile = ({
   onToggle,
   onToggleFavorite,
   onRequestAccess,
+  onShowInfo,
 }: {
   agent: Agent;
   onToggle: () => void;
   onToggleFavorite: () => void;
   onRequestAccess: () => void;
+  onShowInfo: () => void;
 }) => {
   const handleRequest = () => {
     onRequestAccess();
@@ -230,7 +237,9 @@ const AgentTile = ({
         height: '100%',
         position: 'relative',
       }}
-      onClick={agent.hasAccess ? onToggle : undefined}
+      onClick={() => {
+        onShowInfo();
+      }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{
@@ -331,6 +340,7 @@ const AgentTile = ({
 const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () => { } }: RightSidebarProps) => {
   const {
     agents,
+    isLoadingAgents,
     toggleAgent,
     toggleAgentFavorite,
     activeAgents,
@@ -339,6 +349,7 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
     backgroundTasks,
   } = useChat();
 
+  const [selectedAgentForInfo, setSelectedAgentForInfo] = useState<Agent | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<AgentCategory>>(new Set());
 
   const toggleCategory = (category: AgentCategory) => {
@@ -612,15 +623,24 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
                   gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                   gap: 16,
                 }}>
-                  {favoriteAgents.map((agent) => (
-                    <AgentTile
-                      key={agent.id}
-                      agent={agent}
-                      onToggle={() => toggleAgent(agent.id)}
-                      onToggleFavorite={() => toggleAgentFavorite(agent.id)}
-                      onRequestAccess={() => { }}
-                    />
-                  ))}
+                  {isLoadingAgents ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                        <Skeleton active avatar={{ shape: 'square' }} paragraph={{ rows: 1 }} />
+                      </div>
+                    ))
+                  ) : (
+                    favoriteAgents.map((agent) => (
+                      <AgentTile
+                        key={agent.id}
+                        agent={agent}
+                        onToggle={() => toggleAgent(agent.id)}
+                        onToggleFavorite={() => toggleAgentFavorite(agent.id)}
+                        onRequestAccess={() => { }}
+                        onShowInfo={() => setSelectedAgentForInfo(agent)}
+                      />
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -651,15 +671,24 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
                     gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                     gap: 16,
                   }}>
-                    {categoryAgents.map((agent) => (
-                      <AgentTile
-                        key={agent.id}
-                        agent={agent}
-                        onToggle={() => toggleAgent(agent.id)}
-                        onToggleFavorite={() => toggleAgentFavorite(agent.id)}
-                        onRequestAccess={() => { }}
-                      />
-                    ))}
+                    {isLoadingAgents ? (
+                      Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                          <Skeleton active avatar={{ shape: 'square' }} paragraph={{ rows: 1 }} />
+                        </div>
+                      ))
+                    ) : (
+                      categoryAgents.map((agent) => (
+                        <AgentTile
+                          key={agent.id}
+                          agent={agent}
+                          onToggle={() => toggleAgent(agent.id)}
+                          onToggleFavorite={() => toggleAgentFavorite(agent.id)}
+                          onRequestAccess={() => { }}
+                          onShowInfo={() => setSelectedAgentForInfo(agent)}
+                        />
+                      ))
+                    )}
                   </div>
                 </div>
               );
@@ -684,15 +713,24 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
                 }}>
                   <StarFilled style={{ fontSize: 10, color: 'var(--color-primary)' }} /> Favorites
                 </div>
-                {favoriteAgents.map((agent) => (
-                  <AgentCard
-                    key={agent.id}
-                    agent={agent}
-                    onToggle={() => toggleAgent(agent.id)}
-                    onToggleFavorite={() => toggleAgentFavorite(agent.id)}
-                    onRequestAccess={() => { }}
-                  />
-                ))}
+                {isLoadingAgents ? (
+                  Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} style={{ padding: 12, borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface)', marginBottom: 6 }}>
+                      <Skeleton active avatar={{ size: 'small', shape: 'square' }} paragraph={{ rows: 1 }} title={false} />
+                    </div>
+                  ))
+                ) : (
+                  favoriteAgents.map((agent) => (
+                    <AgentCard
+                      key={agent.id}
+                      agent={agent}
+                      onToggle={() => toggleAgent(agent.id)}
+                      onToggleFavorite={() => toggleAgentFavorite(agent.id)}
+                      onRequestAccess={() => { }}
+                      onShowInfo={() => setSelectedAgentForInfo(agent)}
+                    />
+                  ))
+                )}
               </div>
             )}
 
@@ -735,21 +773,223 @@ const RightSidebar = ({ isTablet = false, expanded = false, onToggleExpand = () 
                       ({categoryAgents.length})
                     </span>
                   </div>
-                  {!isCollapsed && categoryAgents.map((agent) => (
-                    <AgentCard
-                      key={agent.id}
-                      agent={agent}
-                      onToggle={() => toggleAgent(agent.id)}
-                      onToggleFavorite={() => toggleAgentFavorite(agent.id)}
-                      onRequestAccess={() => { }} // Not needed for accessed agents
-                    />
-                  ))}
+                  {!isCollapsed && (
+                    isLoadingAgents ? (
+                      Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} style={{ padding: 12, borderRadius: 10, border: '1px solid var(--color-border)', background: 'var(--color-surface)', marginBottom: 6 }}>
+                          <Skeleton active avatar={{ size: 'small', shape: 'square' }} paragraph={{ rows: 1 }} title={false} />
+                        </div>
+                      ))
+                    ) : (
+                      categoryAgents.map((agent) => (
+                        <AgentCard
+                          key={agent.id}
+                          agent={agent}
+                          onToggle={() => toggleAgent(agent.id)}
+                          onToggleFavorite={() => toggleAgentFavorite(agent.id)}
+                          onRequestAccess={() => { }} // Not needed for accessed agents
+                          onShowInfo={() => setSelectedAgentForInfo(agent)}
+                        />
+                      ))
+                    )
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Agent Information Modal */}
+      <Modal
+        title={null}
+        open={!!selectedAgentForInfo}
+        onCancel={() => setSelectedAgentForInfo(null)}
+        footer={null}
+        width={640}
+        centered
+        closable={false}
+        styles={{
+          mask: { backdropFilter: 'blur(4px)' },
+          body: { padding: 0, overflow: 'hidden', background: 'var(--color-surface)' }
+        }}
+      >
+        {selectedAgentForInfo && (
+          <div>
+            {/* Modal Header/Banner */}
+            <div style={{
+              padding: '48px 32px',
+              background: 'linear-gradient(135deg, var(--color-primary) 0%, #F59E0B 100%)',
+              color: 'var(--color-text-inverse)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 20,
+              position: 'relative',
+            }}>
+              {/* Custom Close Button */}
+              <div
+                onClick={() => setSelectedAgentForInfo(null)}
+                style={{
+                  position: 'absolute',
+                  top: 16,
+                  right: 16,
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  backdropFilter: 'blur(4px)',
+                  color: 'white',
+                  fontSize: 14,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                }}
+              >
+                <CloseOutlined />
+              </div>
+
+              <div style={{
+                width: 80,
+                height: 80,
+                borderRadius: 20,
+                background: 'rgba(255,255,255,0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 40,
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+              }}>
+                <SpaceIcon icon={selectedAgentForInfo.icon} style={{ color: 'white' }} />
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <Typography.Title
+                  level={2}
+                  style={{
+                    color: 'white',
+                    margin: 0,
+                    marginBottom: 8,
+                    fontFamily: "'Playfair Display', serif",
+                    fontSize: 32,
+                  }}
+                >
+                  {selectedAgentForInfo.name}
+                </Typography.Title>
+                <Tag
+                  color="rgba(255,255,255,0.2)"
+                  style={{
+                    border: 'none',
+                    color: 'white',
+                    borderRadius: 6,
+                    padding: '4px 12px',
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  {categoryLabels[selectedAgentForInfo.category].label}
+                </Tag>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: 24 }}>
+              <Typography.Paragraph style={{ fontSize: 15, color: 'var(--color-text)', lineHeight: 1.6 }}>
+                {selectedAgentForInfo.description}
+              </Typography.Paragraph>
+
+              <Divider style={{ margin: '20px 0' }} />
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                    ACCESS STATUS
+                  </Typography.Text>
+                  <Typography.Text strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {selectedAgentForInfo.hasAccess ? (
+                      <span style={{ color: '#10b981' }}>✓ Granted</span>
+                    ) : (
+                      <span style={{ color: 'var(--color-text-tertiary)' }}>Locked</span>
+                    )}
+                  </Typography.Text>
+                </div>
+                {selectedAgentForInfo.capabilities && selectedAgentForInfo.capabilities.length > 0 && (
+                  <div style={{ flex: 2, minWidth: 200 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                      CAPABILITIES
+                    </Typography.Text>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {selectedAgentForInfo.capabilities.map((cap) => (
+                        <Tag key={cap} style={{ borderRadius: 4, margin: 0, textTransform: 'capitalize' }}>
+                          {cap}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                {selectedAgentForInfo.hasAccess ? (
+                  <Button
+                    type="primary"
+                    block
+                    size="large"
+                    onClick={() => {
+                      if (!selectedAgentForInfo.isActive) toggleAgent(selectedAgentForInfo.id);
+                      setSelectedAgentForInfo(null);
+                    }}
+                    style={{
+                      height: 48,
+                      borderRadius: 10,
+                      background: 'var(--color-primary)',
+                      border: 'none',
+                    }}
+                  >
+                    {selectedAgentForInfo.isActive ? 'Using Agent' : 'Enable Agent'}
+                  </Button>
+                ) : (
+                  <Button
+                    type="primary"
+                    block
+                    size="large"
+                    onClick={() => {
+                      message.success(`Access request sent for ${selectedAgentForInfo.name}`);
+                      setSelectedAgentForInfo(null);
+                    }}
+                    style={{
+                      height: 48,
+                      borderRadius: 10,
+                    }}
+                  >
+                    Request Access
+                  </Button>
+                )}
+                <Button
+                  size="large"
+                  icon={selectedAgentForInfo.isFavorite ? <StarFilled /> : <StarOutlined />}
+                  onClick={() => toggleAgentFavorite(selectedAgentForInfo.id)}
+                  style={{
+                    height: 48,
+                    width: 48,
+                    borderRadius: 10,
+                    color: selectedAgentForInfo.isFavorite ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
     </div>
   );

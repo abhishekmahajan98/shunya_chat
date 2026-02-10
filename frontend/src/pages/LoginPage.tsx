@@ -16,7 +16,7 @@ export default function LoginPage() {
 
     const navigate = useNavigate();
     const { login, signup } = useAuth();
-    const { refreshHistory } = useChat();
+    const { refreshAllData } = useChat();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -30,7 +30,7 @@ export default function LoginPage() {
                 await login(email, password);
                 message.success('Welcome back!');
             }
-            await refreshHistory();
+            await refreshAllData();
             navigate('/');
         } catch (error) {
             message.error(error instanceof Error ? error.message : 'Authentication failed');

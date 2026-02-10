@@ -10,7 +10,6 @@ import {
   MoonOutlined,
   FolderOutlined,
   RobotOutlined,
-  RightOutlined,
   FileTextOutlined,
   CloseOutlined,
   ClockCircleOutlined,

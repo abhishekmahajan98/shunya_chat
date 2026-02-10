@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Dropdown, message, Popconfirm, Skeleton } from 'antd';
+import { Button, Dropdown, message, Popconfirm, Skeleton } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   PlusOutlined,
@@ -7,7 +7,6 @@ import {
   MoonOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  SearchOutlined,
   StarOutlined,
   StarFilled,
   FolderOutlined,
@@ -23,7 +22,6 @@ import {
   LogoutOutlined,
   UserOutlined,
   MessageOutlined,
-  LoadingOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
@@ -147,8 +145,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     selectedScope,
     setSelectedScope,
     toggleSpacePin,
-    spaceSearch,
-    setSpaceSearch,
+    isLoadingSpaces,
     updateSpace,
     clearMessages,
     setConversationId,
@@ -217,10 +214,8 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     });
   };
 
-  // Filter spaces based on search
-  const filteredSpaces = spaces.filter((s) =>
-    s.name.toLowerCase().includes(spaceSearch.toLowerCase())
-  );
+  // Filter spaces - removed search filtering
+  const filteredSpaces = spaces;
 
   const pinnedSpaces = filteredSpaces.filter((s) => s.isPinned);
   const unpinnedSpaces = filteredSpaces.filter((s) => !s.isPinned);
@@ -427,21 +422,11 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         </Button>
       </div>
 
-      {/* Search */}
+      {/* Divider */}
       {!collapsed && (
-        <div style={{ padding: '0 16px 12px' }}>
-          <Input
-            placeholder="Search spaces..."
-            prefix={<SearchOutlined style={{ color: 'var(--color-text-tertiary)' }} />}
-            value={spaceSearch}
-            onChange={(e) => setSpaceSearch(e.target.value)}
-            style={{
-              borderRadius: 8,
-              background: 'var(--color-surface)',
-            }}
-          />
-        </div>
+        <div style={{ margin: '0 16px 12px', height: 1, background: 'var(--color-border)', opacity: 0.6 }} />
       )}
+
 
       {/* Tab Toggle */}
       {!collapsed && (
@@ -583,7 +568,16 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
             }}>
               <StarFilled style={{ fontSize: 10 }} /> Pinned
             </div>
-            {pinnedSpaces.map(renderSpaceItem)}
+            {isLoadingSpaces ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Skeleton.Avatar active size="small" shape="square" />
+                  <Skeleton.Button active size="small" style={{ width: 120, height: 16, borderRadius: 4 }} block={false} />
+                </div>
+              ))
+            ) : (
+              pinnedSpaces.map(renderSpaceItem)
+            )}
           </>
         )}
 
@@ -599,7 +593,16 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
             }}>
               Owned Spaces ({mySpaces.length})
             </div>
-            {mySpaces.map(renderSpaceItem)}
+            {isLoadingSpaces ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Skeleton.Avatar active size="small" shape="square" />
+                  <Skeleton.Button active size="small" style={{ width: 120, height: 16, borderRadius: 4 }} block={false} />
+                </div>
+              ))
+            ) : (
+              mySpaces.map(renderSpaceItem)
+            )}
           </>
         )}
 
