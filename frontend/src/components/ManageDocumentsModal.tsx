@@ -1,18 +1,24 @@
 import { useState, useEffect } from 'react';
-import { Modal, Input, Button, Empty, message, Segmented, Tooltip } from 'antd';
+import { Modal, Empty, message, Upload, Button, Input, Tooltip } from 'antd';
 import {
-    FileTextOutlined,
     DeleteOutlined,
-    PlusOutlined,
+    FileTextOutlined,
     FolderOutlined,
     FolderAddOutlined,
+    UploadOutlined,
+    HomeOutlined,
     RightOutlined,
     DownOutlined,
-    HomeOutlined,
+    CheckCircleOutlined,
+    ClockCircleOutlined,
+    ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat, type SpaceItem } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
+import { useChat, type SpaceItem, type Space } from '../context/ChatContext';
 import SpaceIcon from './SpaceIcon';
+
+const { Dragger } = Upload;
 
 interface ManageDocumentsModalProps {
     spaceId: string | null;
@@ -22,62 +28,116 @@ interface ManageDocumentsModalProps {
 
 const ManageDocumentsModal = ({ spaceId, open, onClose }: ManageDocumentsModalProps) => {
     const { theme } = useTheme();
+    const { user } = useAuth();
     const {
         spaces,
-        addDocumentToSpace,
+        uploadDocument,
+        createFolder,
         removeDocumentFromSpace,
     } = useChat();
 
-    const [newItemName, setNewItemName] = useState('');
-    const [newItemType, setNewItemType] = useState<'document' | 'folder'>('document');
+    const [isUploading, setIsUploading] = useState(false);
+    const [localSpace, setLocalSpace] = useState<Space | null>(null);
+    const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-    const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null); // null means root
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
 
-    // Get the latest space data from context
-    const space = spaces.find(s => s.id === spaceId);
+    // Fetch space details including documents when modal opens
+    const fetchDetails = async () => {
+        if (!spaceId) return;
+        const { getSpace } = await import('../api');
+        try {
+            const data = await getSpace(spaceId);
 
-    // Reset form when modal closes
-    useEffect(() => {
-        if (!open) {
-            setNewItemName('');
-            setNewItemType('document');
-            setExpandedFolders(new Set());
-            setSelectedFolderId(null);
+            // Build tree from flat list
+            const buildTree = (docs: any[], parentId: string | null = null): SpaceItem[] => {
+                return docs
+                    .filter(d => (d.parent_id === parentId))
+                    .map(d => ({
+                        id: d.id,
+                        name: d.name,
+                        type: d.type as 'document' | 'folder',
+                        status: d.status,
+                        size: d.size_bytes ? d.size_bytes / 1024 : 0,
+                        children: d.type === 'folder' ? buildTree(docs, d.id) : undefined
+                    }));
+            };
+
+            const mappedItems = buildTree(data.documents);
+
+            setLocalSpace({
+                ...data,
+                icon: data.type === 'personal' ? 'user' : 'folder',
+                isPinned: false,
+                isPersonal: data.type === 'personal',
+                type: data.type || 'shared',
+                documentCount: data.documents.filter((d: any) => d.type === 'document').length,
+                children: mappedItems,
+                ownerId: data.owner_id,
+            } as Space);
+        } catch (error) {
+            console.error('Failed to fetch space details:', error);
+            message.error('Failed to load documents');
         }
-    }, [open]);
+    };
+
+    useEffect(() => {
+        if (open && spaceId) {
+            fetchDetails();
+        } else if (!open) {
+            setLocalSpace(null);
+            setSelectedFolderId(null);
+            setExpandedFolders(new Set());
+            setIsCreatingFolder(false);
+        }
+    }, [open, spaceId]);
+
+    const space = localSpace || spaces.find(s => s.id === spaceId);
 
     if (!spaceId || !space) return null;
 
-    const isOwner = space.ownerId === 'current-user';
-    const isAdmin = space.members?.some(m => m.userId === 'current-user' && m.role === 'admin');
-    const canManageDocs = isOwner || isAdmin || space.members?.some(m => m.userId === 'current-user' && m.role === 'editor');
+    const isOwner = space.ownerId === user?.id;
+    const isAdmin = space.members?.some(m => m.userId === user?.id && m.role === 'admin');
+    const canManageDocs = isOwner || isAdmin || space.members?.some(m => m.userId === user?.id && m.role === 'editor');
 
-    const handleAddItem = () => {
-        if (!newItemName.trim() || !canManageDocs) return;
-        const itemId = `${newItemType}-${Date.now()}`;
-        const newItem: SpaceItem = {
-            id: itemId,
-            name: newItemName.trim(),
-            type: newItemType,
-            ...(newItemType === 'document' ? { size: Math.floor(Math.random() * 500) + 10 } : { children: [] }),
-        };
-        addDocumentToSpace(space.id, newItem, selectedFolderId || undefined);
-        setNewItemName('');
-        // Expand the target folder so the user sees the new item
-        if (selectedFolderId) {
-            setExpandedFolders(prev => new Set(prev).add(selectedFolderId));
+    const handleUpload = async (file: File) => {
+        if (!canManageDocs) return;
+        setIsUploading(true);
+        try {
+            await uploadDocument(space.id, file, selectedFolderId || undefined);
+            message.success(`${file.name} uploaded successfully`);
+            await fetchDetails();
+        } catch (error) {
+            message.error(`Failed to upload ${file.name}`);
+        } finally {
+            setIsUploading(false);
         }
-        message.success(`${newItemType === 'folder' ? 'Folder' : 'Document'} added`);
+        return false;
     };
 
-    const handleRemoveItem = (itemId: string) => {
-        if (!canManageDocs) return;
-        removeDocumentFromSpace(space.id, itemId);
-        // If we deleted the currently selected folder, reset selection to root
-        if (selectedFolderId === itemId) {
-            setSelectedFolderId(null);
+    const handleCreateFolder = async () => {
+        if (!newFolderName.trim() || !canManageDocs) return;
+        try {
+            await createFolder(space.id, newFolderName, selectedFolderId || undefined);
+            message.success(`Folder "${newFolderName}" created`);
+            setNewFolderName('');
+            setIsCreatingFolder(false);
+            await fetchDetails();
+        } catch (error) {
+            message.error('Failed to create folder');
         }
-        message.success('Item removed');
+    };
+
+    const handleRemoveItem = async (itemId: string) => {
+        if (!canManageDocs) return;
+        try {
+            await removeDocumentFromSpace(space.id, itemId);
+            message.success('Item removed');
+            await fetchDetails();
+        } catch (error) {
+            message.error('Failed to remove item');
+        }
     };
 
     const toggleFolder = (folderId: string) => {
@@ -89,7 +149,95 @@ const ManageDocumentsModal = ({ spaceId, open, onClose }: ManageDocumentsModalPr
         });
     };
 
-    // Helper to find folder name for display
+    const renderTreeItem = (item: SpaceItem, level: number = 0) => {
+        const isFolder = item.type === 'folder';
+        const isSelected = selectedFolderId === item.id;
+        const isExpanded = expandedFolders.has(item.id);
+
+        return (
+            <div key={item.id}>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        paddingLeft: 10 + level * 20,
+                        borderRadius: 6,
+                        marginBottom: 2,
+                        background: isSelected
+                            ? (theme === 'dark' ? 'rgba(237, 172, 51, 0.15)' : 'rgba(237, 172, 51, 0.1)')
+                            : 'transparent',
+                        border: isSelected ? '1px solid #EDAC33' : '1px solid transparent',
+                        cursor: isFolder ? 'pointer' : 'default',
+                        transition: 'all 0.15s ease',
+                    }}
+                    onClick={() => {
+                        if (isFolder) setSelectedFolderId(item.id);
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, overflow: 'hidden' }}>
+                        {isFolder && (
+                            <div onClick={(e) => { e.stopPropagation(); toggleFolder(item.id); }} style={{ display: 'flex', alignItems: 'center', padding: 2 }}>
+                                {isExpanded ? <DownOutlined style={{ fontSize: 10 }} /> : <RightOutlined style={{ fontSize: 10 }} />}
+                            </div>
+                        )}
+                        {!isFolder && <div style={{ width: 14 }} />}
+
+                        {isFolder ? (
+                            <FolderOutlined style={{ color: '#EDAC33' }} />
+                        ) : (
+                            <FileTextOutlined style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)' }} />
+                        )}
+                        <span style={{
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            fontSize: 13,
+                            color: theme === 'dark' ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                        }}>
+                            {item.name}
+                            {!isFolder && item.status && (
+                                <Tooltip title={`Status: ${item.status}`}>
+                                    {item.status === 'completed' && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} />}
+                                    {item.status === 'processing' && <ClockCircleOutlined style={{ color: '#faad14', fontSize: 12 }} />}
+                                    {item.status === 'error' && <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} />}
+                                </Tooltip>
+                            )}
+                        </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {!isFolder && item.size && (
+                            <span style={{ fontSize: 11, color: theme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
+                                {item.size < 1024 ? `${item.size.toFixed(1)} KB` : `${(item.size / 1024).toFixed(1)} MB`}
+                            </span>
+                        )}
+                        {canManageDocs && (
+                            <Tooltip title="Delete">
+                                <DeleteOutlined
+                                    style={{ color: 'rgba(255,255,255,0.25)', cursor: 'pointer' }}
+                                    onMouseEnter={e => e.currentTarget.style.color = '#ff4d4f'}
+                                    onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.25)'}
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveItem(item.id); }}
+                                />
+                            </Tooltip>
+                        )}
+                    </div>
+                </div>
+                {isFolder && isExpanded && item.children && item.children.length > 0 && (
+                    <div>
+                        {item.children.map(child => renderTreeItem(child, level + 1))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Helper to find folder name for target indicator
     const findFolderName = (items: SpaceItem[], id: string): string => {
         for (const item of items) {
             if (item.id === id) return item.name;
@@ -101,238 +249,128 @@ const ManageDocumentsModal = ({ spaceId, open, onClose }: ManageDocumentsModalPr
         return '';
     };
 
-    const selectedFolderName = selectedFolderId
-        ? findFolderName(space.children || [], selectedFolderId)
-        : 'Root (Top Level)';
-
-    // Render tree item recursively
-    const renderTreeItem = (item: SpaceItem, level: number = 0) => {
-        const isFolder = item.type === 'folder';
-        const isExpanded = expandedFolders.has(item.id);
-        const isSelected = selectedFolderId === item.id;
-
-        return (
-            <div key={item.id}>
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        paddingLeft: 12 + level * 20,
-                        borderRadius: 6,
-                        marginBottom: 2,
-                        background: isSelected
-                            ? (theme === 'dark' ? 'rgba(237, 172, 51, 0.15)' : 'rgba(237, 172, 51, 0.1)')
-                            : (theme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-                        border: isSelected
-                            ? '1px solid #EDAC33'
-                            : '1px solid transparent',
-                        transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                        if (!isSelected) {
-                            e.currentTarget.style.background = theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (!isSelected) {
-                            e.currentTarget.style.background = theme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
-                        }
-                    }}
-                >
-                    <div
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}
-                        onClick={() => {
-                            if (isFolder) {
-                                // If clicking a folder, verify if we are toggling or selecting
-                                // For now, let's make single click select, and icon click toggle
-                                setSelectedFolderId(item.id);
-                            } else {
-                                // Clicking a document doesn't select it as a container, obviously
-                            }
-                        }}
-                    >
-                        {isFolder && (
-                            <div
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleFolder(item.id);
-                                }}
-                                style={{
-                                    padding: 4,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                <span style={{ fontSize: 10, color: theme === 'dark' ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)', width: 12 }}>
-                                    {isExpanded ? <DownOutlined /> : <RightOutlined />}
-                                </span>
-                            </div>
-                        )}
-                        {!isFolder && <span style={{ width: 20 }} />}
-
-                        {isFolder ? (
-                            <FolderOutlined style={{ fontSize: 16, color: '#EDAC33' }} />
-                        ) : (
-                            <FileTextOutlined style={{ fontSize: 16, color: theme === 'dark' ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.65)' }} />
-                        )}
-
-                        <span style={{ flex: 1 }}>{item.name}</span>
-
-                        {!isFolder && item.size && (
-                            <span style={{ fontSize: 11, color: theme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
-                                {item.size} KB
-                            </span>
-                        )}
-                        {isFolder && item.children && (
-                            <span style={{ fontSize: 11, color: theme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
-                                {item.children.length} items
-                            </span>
-                        )}
-                    </div>
-                    {canManageDocs && (
-                        <Button
-                            type="text"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveItem(item.id);
-                            }}
-                            size="small"
-                        />
-                    )}
-                </div>
-                {isFolder && isExpanded && item.children && item.children.length > 0 && (
-                    <div style={{ marginLeft: 0 }}>
-                        {item.children.map(child => renderTreeItem(child, level + 1))}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    const styles = {
-        header: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-        },
-        spaceIcon: {
-            fontSize: 20,
-            color: '#EDAC33',
-        },
-        addSection: {
-            display: 'flex',
-            flexDirection: 'column' as const,
-            gap: 12,
-            marginBottom: 16,
-            padding: 16,
-            background: theme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
-            borderRadius: 8,
-            border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
-        },
-        targetFolder: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-            color: theme === 'dark' ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.65)',
-            marginBottom: 4,
-        }
-    };
+    const targetLabel = selectedFolderId ? findFolderName(space.children || [], selectedFolderId) : 'Root';
 
     return (
         <Modal
             title={
-                <div style={styles.header}>
-                    <SpaceIcon icon={space.icon} style={styles.spaceIcon} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <SpaceIcon icon={space.icon} style={{ fontSize: 20, color: '#EDAC33' }} />
                     <span>{space.name} - Documents</span>
                 </div>
             }
             open={open}
             onCancel={onClose}
             footer={null}
-            width={600}
+            width={700}
         >
-            {/* Add Document/Folder Section */}
-            {canManageDocs && (
-                <div style={styles.addSection}>
-                    <div style={styles.targetFolder}>
-                        <span>Adding to:</span>
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '2px 8px',
-                                background: theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-                                borderRadius: 4,
-                                fontWeight: 500,
-                            }}
-                        >
-                            {selectedFolderId ? <FolderOutlined /> : <HomeOutlined />}
-                            {selectedFolderName}
-                            {selectedFolderId && (
-                                <Tooltip title="Clear selection (add to root)">
-                                    <DeleteOutlined
-                                        style={{ cursor: 'pointer', fontSize: 10, marginLeft: 4 }}
-                                        onClick={() => setSelectedFolderId(null)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Upload & Create Folder Actions */}
+                {canManageDocs && (
+                    <div style={{
+                        background: theme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                        padding: 16,
+                        borderRadius: 12,
+                        border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Target:</span>
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                    padding: '4px 10px',
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    color: '#EDAC33'
+                                }}>
+                                    {selectedFolderId ? <FolderOutlined /> : <HomeOutlined />}
+                                    {targetLabel}
+                                    {selectedFolderId && (
+                                        <Tooltip title="Reset to Root">
+                                            <DeleteOutlined
+                                                style={{ fontSize: 10, marginLeft: 4, cursor: 'pointer', color: 'rgba(255,255,255,0.3)' }}
+                                                onClick={() => setSelectedFolderId(null)}
+                                            />
+                                        </Tooltip>
+                                    )}
+                                </div>
+                            </div>
+
+                            {!isCreatingFolder ? (
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<FolderAddOutlined />}
+                                    onClick={() => setIsCreatingFolder(true)}
+                                    style={{ color: '#EDAC33' }}
+                                >
+                                    New Folder
+                                </Button>
+                            ) : (
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <Input
+                                        size="small"
+                                        placeholder="Folder name"
+                                        value={newFolderName}
+                                        onChange={e => setNewFolderName(e.target.value)}
+                                        onPressEnter={handleCreateFolder}
+                                        autoFocus
+                                        style={{ width: 140 }}
                                     />
-                                </Tooltip>
+                                    <Button size="small" type="primary" onClick={handleCreateFolder} style={{ background: '#EDAC33', borderColor: '#EDAC33' }}>Create</Button>
+                                    <Button size="small" type="text" onClick={() => { setIsCreatingFolder(false); setNewFolderName(''); }}>Cancel</Button>
+                                </div>
                             )}
                         </div>
-                    </div>
 
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <Segmented
-                            options={[
-                                { label: <span><FileTextOutlined style={{ marginRight: 4 }} />Doc</span>, value: 'document' },
-                                { label: <span><FolderAddOutlined style={{ marginRight: 4 }} />Folder</span>, value: 'folder' },
-                            ]}
-                            value={newItemType}
-                            onChange={(value) => setNewItemType(value as 'document' | 'folder')}
-                            size="middle"
-                        />
-                        <Input
-                            placeholder={newItemType === 'folder' ? 'New folder name' : 'Document name (e.g., Report.pdf)'}
-                            value={newItemName}
-                            onChange={(e) => setNewItemName(e.target.value)}
-                            onPressEnter={handleAddItem}
-                            style={{ flex: 1 }}
-                        />
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            onClick={handleAddItem}
-                            disabled={!newItemName.trim()}
-                            style={{ background: '#EDAC33', borderColor: '#EDAC33' }}
+                        <Dragger
+                            multiple={true}
+                            beforeUpload={handleUpload}
+                            showUploadList={true}
+                            disabled={isUploading}
+                            style={{ background: 'transparent' }}
                         >
-                            Add
-                        </Button>
+                            <p className="ant-upload-drag-icon">
+                                <UploadOutlined style={{ color: '#EDAC33', fontSize: 24 }} />
+                            </p>
+                            <p className="ant-upload-text" style={{ fontSize: 14 }}>Drag files here to upload to <b>{targetLabel}</b></p>
+                            <p className="ant-upload-hint" style={{ fontSize: 12, opacity: 0.5 }}>
+                                PDFs, Docs, or text files for knowledge extraction.
+                            </p>
+                        </Dragger>
                     </div>
-                </div>
-            )}
-
-            {/* Documents/Folders Tree */}
-            <div style={{
-                maxHeight: 400,
-                overflowY: 'auto',
-                border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                borderRadius: 8,
-                padding: 8,
-            }}>
-                {space.children && space.children.length > 0 ? (
-                    space.children.map(item => renderTreeItem(item))
-                ) : (
-                    <Empty
-                        description="No documents or folders yet"
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        style={{ padding: '40px 0' }}
-                    />
                 )}
+
+                {/* Documents Tree */}
+                <div style={{
+                    maxHeight: 400,
+                    overflowY: 'auto',
+                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                    borderRadius: 12,
+                    padding: 8,
+                }}>
+                    <div style={{ padding: '4px 10px', fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>NAME</span>
+                        <span>SIZE / ACTIONS</span>
+                    </div>
+                    <div style={{ height: 1, background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', margin: '4px 0 8px' }} />
+
+                    {space.children && space.children.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {space.children.map(item => renderTreeItem(item))}
+                        </div>
+                    ) : (
+                        <Empty
+                            description="This space is empty"
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            style={{ padding: '60px 0' }}
+                        />
+                    )}
+                </div>
             </div>
         </Modal>
     );

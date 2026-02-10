@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { MenuProps } from 'antd';
-import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, List, message as antMessage } from 'antd';
+import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, message as antMessage } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -10,7 +10,7 @@ import {
   MoonOutlined,
   FolderOutlined,
   RobotOutlined,
-  DownOutlined,
+  RightOutlined,
   FileTextOutlined,
   CloseOutlined,
   ClockCircleOutlined,
@@ -20,6 +20,7 @@ import { useChat, type Attachment } from '../context/ChatContext';
 import AppMenu from '../components/AppMenu';
 import RightSidebar from '../components/RightSidebar';
 import MessageRenderer from '../components/MessageRenderer';
+import ScopeSelector from '../components/ScopeSelector';
 import { streamMessage, type AgentStreamChunk, uploadFile } from '../api';
 
 const { Sider, Content } = Layout;
@@ -34,7 +35,6 @@ const ChatPage = () => {
     addMessage,
     updateMessage,
     selectedScope,
-    setSelectedScope,
     activeAgents,
     backgroundTasks,
     conversationId,
@@ -131,23 +131,6 @@ const ChatPage = () => {
     }
   }, [messages, isLoading]);
 
-  // Handle clearing specific selected items from scope
-  const handleRemoveSelectedItem = (id: string) => {
-    if (!selectedScope) return;
-    setSelectedScope({
-      ...selectedScope,
-      selectedItems: selectedScope.selectedItems.filter(i => i.id !== id),
-    });
-  };
-
-  const handleClearSelection = () => {
-    if (!selectedScope) return;
-    setSelectedScope({
-      ...selectedScope,
-      selectedItems: [],
-    });
-  };
-
   const handleViewDemo = () => {
     setIsLoading(true);
 
@@ -222,6 +205,9 @@ const ChatPage = () => {
 
 
     // Add user message to UI
+    console.log('Sending Message. Selected Scope:', selectedScope);
+    console.log('Space ID:', selectedScope?.spaceId);
+
     addMessage({
       type: 'sync',
       sender: 'user',
@@ -567,7 +553,9 @@ const ChatPage = () => {
         },
         conversationId || undefined,
         activeAgents.map(a => a.id),  // Pass active agent IDs from UI
-        currentAttachments.length > 0 ? currentAttachments : undefined
+        currentAttachments.length > 0 ? currentAttachments : undefined,
+        selectedScope?.spaceId ? [selectedScope.spaceId] : undefined,
+        selectedScope?.selectedItems.map(i => i.id)
       );
     } catch (error) {
       console.error('Failed to stream message:', error);
@@ -616,53 +604,7 @@ const ChatPage = () => {
   };
 
   // Scope Popover Content
-  const scopePopoverContent = (
-    <div style={{ width: 300 }}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '0 0 8px',
-        borderBottom: '1px solid var(--color-border)',
-        marginBottom: 8
-      }}>
-        <span style={{ fontWeight: 600 }}>Selected Context</span>
-        <Button size="small" type="text" onClick={handleClearSelection} disabled={!selectedScope?.selectedItems.length}>
-          Clear All
-        </Button>
-      </div>
-
-      {selectedScope?.selectedItems.length === 0 ? (
-        <div style={{ color: 'var(--color-text-secondary)', fontStyle: 'italic', padding: '8px 0' }}>
-          Whole space "{selectedScope.spaceName}" selected
-        </div>
-      ) : (
-        <List
-          size="small"
-          dataSource={selectedScope?.selectedItems}
-          renderItem={(item) => (
-            <List.Item
-              actions={[
-                <Button
-                  key="del"
-                  type="text"
-                  size="small"
-                  icon={<CloseOutlined style={{ fontSize: 10 }} />}
-                  onClick={() => handleRemoveSelectedItem(item.id)}
-                />
-              ]}
-              style={{ padding: '4px 0' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 220 }}>
-                {item.type === 'folder' ? <FolderOutlined /> : <FileTextOutlined />}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-              </div>
-            </List.Item>
-          )}
-        />
-      )}
-    </div>
-  );
+  const scopePopoverContent = <ScopeSelector />;
 
   return (
     <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden' }}>
@@ -1047,8 +989,8 @@ const ChatPage = () => {
                           padding: '4px 10px',
                           borderRadius: 16,
                           border: '1px solid var(--color-border)',
-                          background: selectedScope?.selectedItems.length ? 'var(--color-sidebar-active)' : 'transparent',
-                          color: selectedScope?.selectedItems.length ? 'var(--color-primary)' : 'var(--color-text)',
+                          background: selectedScope ? 'var(--color-primary-subtle)' : 'transparent',
+                          color: selectedScope ? 'var(--color-primary)' : 'var(--color-text)',
                           fontSize: 13,
                           cursor: 'pointer',
                           transition: 'all 0.2s ease',
@@ -1056,12 +998,14 @@ const ChatPage = () => {
                         }}
                       >
                         <FolderOutlined style={{ fontSize: 12 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {selectedScope?.selectedItems.length
-                            ? `${selectedScope.spaceName} > ${selectedScope.selectedItems.length} items`
-                            : selectedScope?.spaceName || 'Select Space'}
+                        <span style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: 150
+                        }}>
+                          {selectedScope ? selectedScope.spaceName : 'Select Scope'}
                         </span>
-                        <DownOutlined style={{ fontSize: 10, opacity: 0.5 }} />
                       </button>
                     </Popover>
 
@@ -1122,7 +1066,7 @@ const ChatPage = () => {
             </div>
           </div>
         </Content>
-      </Layout>
+      </Layout >
 
       {/* Right Sidebar - Agent Marketplace */}
       {

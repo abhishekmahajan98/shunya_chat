@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from database import get_supabase
+import uuid
+import uuid
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -80,6 +82,24 @@ async def signup(request: SignupRequest):
                 detail="Please check your email to confirm your account"
             )
         
+        # Create default "Personal Space" for the new user
+        try:
+            space_id = str(uuid.uuid4())
+            new_space = {
+                "id": space_id,
+                "name": "Personal Space",
+                "description": "Your private space for documents",
+                "owner_id": response.user.id,
+                "is_public": False,
+                "type": "personal",
+                "metadata": {"type": "personal"}
+            }
+            supabase.table("spaces").insert(new_space).execute()
+        except Exception as space_err:
+            # We don't want to fail signup if space creation fails, 
+            # but we should log it. List endpoint has lazy-init fallback.
+            print(f"Failed to create personal space for new user: {str(space_err)}")
+
         return AuthResponse(
             user_id=response.user.id,
             email=response.user.email,

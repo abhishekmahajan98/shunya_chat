@@ -4,11 +4,12 @@ Combines agent results into a final response for the user.
 Supports both Google Gemini and Anthropic Claude models with real-time streaming.
 """
 import os
+import logging
 from .state import AgentState
 from typing import AsyncGenerator
 from config import settings
 
-SYNTHESIZER_PROMPT = """You are a helpful assistant. Based on the following agent results and the user's original question, provide a comprehensive and well-formatted response.
+SYNTHESIZER_PROMPT = """You are a helpful assistant. Based on the following agent results and the user's original question, provide a comprehensive response.
 
 Agent Results:
 {agent_results}
@@ -18,17 +19,13 @@ Original Question: {user_message}
 Current Date: {current_date}
 
 Guidelines:
-- Synthesize all relevant information from the agent results
-- Use markdown formatting for clarity (headers, lists, tables if appropriate)
-- If agents provide references/citations, use them to support your response.
-- CRITICAL: Use consistent citation numbering (e.g. [1], [2]) based on the "References" list provided for each agent.
-- Do NOT use citation numbers that exceed the total count of provided references.
-- DO NOT list the sources/references at the end of your response. The user interface displays them automatically.
-- Be concise but thorough
-- If agents returned errors, acknowledge them gracefully
-- Do NOT use LaTeX mathematics formatting (wrapping text in $) for currency or standard text. Only use it for complex formulas. Write "$100", NOT "$100$".
+1. PRIORITIZE TOOLS: Use the agent results as your primary source of truth and cite them using the [id] notation.
+2. GENERAL KNOWLEDGE: If the agent results are insufficient, you may use your general knowledge, but you MUST NOT imply that this outside information came from the agents or documents.
+3. HONESTY: Explicitly state which information came from the provided documents/tools and which is general knowledge if there is any ambiguity.
+4. NO HALLUCINATION: Never claim a fact is in the agents' results if it is not.
+5. FORMATTING: Use markdown (headers, lists, tables).
+6. NO LATEX: Do NOT use $ for currency or text (e.g., use "$100", NOT "$100$").
 """
-
 
 async def synthesizer_node(state: AgentState) -> dict:
     """
@@ -36,20 +33,30 @@ async def synthesizer_node(state: AgentState) -> dict:
     Returns state update (non-streaming).
     For streaming, use stream_synthesize() instead.
     """
+    # Look for RAG context in the system message (injected in chat.py)
+    rag_context = ""
+    for msg in state["messages"]:
+        if hasattr(msg, 'type') and msg.type == "system" and "CONTEXT:" in msg.content:
+            rag_context = msg.content
+            break
+            
     last_message = state["messages"][-1]
     user_message = last_message.content if hasattr(last_message, 'content') else str(last_message)
     
     agent_results = state.get("agent_results", [])
     
-    # If no agent results, this is a direct LLM response (no agents were activated)
-    if not agent_results:
+    # Allow synthesis if we have either agent results OR RAG context
+    if not agent_results and not rag_context:
         return {"final_response": None, "thinking": None}
     
     # Just return marker that synthesizer was called - actual streaming happens separately
-    return {"needs_synthesis": True, "synthesis_prompt": _build_prompt(agent_results, user_message)}
+    return {
+        "needs_synthesis": True, 
+        "synthesis_prompt": _build_prompt(agent_results, user_message, rag_context)
+    }
 
 
-def _build_prompt(agent_results: list, user_message: str) -> str:
+def _build_prompt(agent_results: list, user_message: str, rag_context: str = "") -> str:
     """Build the synthesis prompt from agent results."""
     results_text = ""
     
@@ -102,11 +109,16 @@ def _build_prompt(agent_results: list, user_message: str) -> str:
     from datetime import datetime
     current_date = datetime.now().strftime("%A, %B %d, %Y")
     
-    return SYNTHESIZER_PROMPT.format(
+    base_prompt = SYNTHESIZER_PROMPT.format(
         agent_results=results_text,
         user_message=user_message,
         current_date=current_date
     )
+    
+    if rag_context:
+        return f"{rag_context}\n\n{base_prompt}"
+        
+    return base_prompt
 
 
 def _get_provider(model: str) -> str:

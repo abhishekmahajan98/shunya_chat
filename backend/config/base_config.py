@@ -17,5 +17,9 @@ class BaseConfig(BaseSettings):
     ENV: str = "base"
     DEBUG: bool = False
     FRONTEND_URL: str = "http://localhost:5173"
+    
+    # Unstructured.io (Document Parsing)
+    UNSTRUCTURED_API_KEY: str = ""
+    UNSTRUCTURED_API_URL: str = "https://api.unstructuredapp.io/general/v0/general"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

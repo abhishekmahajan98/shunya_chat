@@ -69,7 +69,16 @@ async def mcp_executor_node(state: AgentState, config: RunnableConfig) -> dict:
     # Format history for workers to resolve context
     history_text = ""
     for msg in state["messages"][:-1]:
-        role = "User" if (hasattr(msg, 'type') and msg.type == "human") else "Assistant"
+        if hasattr(msg, 'type'):
+             if msg.type == "human":
+                 role = "User"
+             elif msg.type == "system":
+                 role = "System"
+             else:
+                 role = "Assistant"
+        else:
+            role = "Assistant"
+            
         content = msg.content if hasattr(msg, 'content') else str(msg)
         history_text += f"{role}: {content}\n"
     

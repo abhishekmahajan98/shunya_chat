@@ -61,7 +61,16 @@ def _format_history(messages: list) -> str:
     formatted = []
     for msg in messages:
         # Check if it's a LangChain message or dict
-        role = "User" if (hasattr(msg, 'type') and msg.type == "human") else "Assistant"
+        if hasattr(msg, 'type'):
+             if msg.type == "human":
+                 role = "User"
+             elif msg.type == "system":
+                 role = "System"
+             else:
+                 role = "Assistant"
+        else:
+            role = "Assistant"
+            
         content = msg.content if hasattr(msg, 'content') else str(msg)
         formatted.append(f"{role}: {content}")
     return "\n".join(formatted)

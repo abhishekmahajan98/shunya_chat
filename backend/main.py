@@ -5,6 +5,7 @@ from config import settings
 from routers.chat import router as chat_router
 from routers.agents import router as agents_router
 from routers.auth import router as auth_router
+from routers.spaces import router as spaces_router
 
 app = FastAPI(
     title="Shunya Chat API",
@@ -25,6 +26,7 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(agents_router)
 app.include_router(auth_router)
+app.include_router(spaces_router)
 
 
 @app.get("/health")

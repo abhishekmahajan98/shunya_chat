@@ -201,7 +201,9 @@ export async function streamMessage(
     onChunk: (chunk: AgentStreamChunk) => void,
     conversationId?: string,
     activeAgents?: string[],
-    attachments?: any[]
+    attachments?: any[],
+    selectedSpaces?: string[],
+    selectedDocuments?: string[]
 ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
@@ -215,6 +217,8 @@ export async function streamMessage(
             conversation_id: conversationId,
             active_agents: activeAgents,
             attachments,
+            selected_spaces: selectedSpaces,
+            selected_documents: selectedDocuments,
         }),
     });
 
@@ -322,9 +326,6 @@ export async function registerAgent(agent: RegisterAgentRequest): Promise<{ id: 
     return response.json();
 }
 
-/**
- * Upload a file to Supabase storage.
- */
 export async function uploadFile(file: File): Promise<{ url: string; path: string; name: string; type: string; size: number }> {
     const formData = new FormData();
     formData.append('file', file);
@@ -341,4 +342,107 @@ export async function uploadFile(file: File): Promise<{ url: string; path: strin
     }
 
     return response.json();
+}
+
+/**
+ * Spaces & Documents API
+ */
+
+export interface Space {
+    id: string;
+    name: string;
+    description?: string;
+    owner_id: string;
+    is_public: boolean;
+    type: 'personal' | 'shared';
+    metadata?: any;
+    created_at: string;
+}
+
+export interface Document {
+    id: string;
+    space_id: string;
+    parent_id?: string;
+    name: string;
+    type: 'document' | 'folder';
+    status: 'processing' | 'completed' | 'error';
+    mime_type?: string;
+    size_bytes?: number;
+    created_at: string;
+}
+
+export async function getSpaces(): Promise<Space[]> {
+    const response = await fetch(`${API_BASE_URL}/api/spaces`, {
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch spaces');
+    return response.json();
+}
+
+export async function createSpace(name: string, description?: string, isPublic: boolean = false): Promise<Space> {
+    const response = await fetch(`${API_BASE_URL}/api/spaces`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ name, description, is_public: isPublic }),
+    });
+    if (!response.ok) throw new Error('Failed to create space');
+    return response.json();
+}
+
+export async function getSpace(spaceId: string): Promise<Space & { documents: Document[] }> {
+    const response = await fetch(`${API_BASE_URL}/api/spaces/${spaceId}`, {
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch space details');
+    return response.json();
+}
+
+export async function uploadDocumentToSpace(spaceId: string, file: File, parentId?: string): Promise<Document> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    let url = `${API_BASE_URL}/api/spaces/${spaceId}/upload`;
+    if (parentId) {
+        url += `?parent_id=${parentId}`;
+    }
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+    });
+    if (!response.ok) throw new Error('Failed to upload document');
+    return response.json();
+}
+
+export async function createFolder(spaceId: string, name: string, parentId?: string): Promise<Document> {
+    const response = await fetch(`${API_BASE_URL}/api/spaces/${spaceId}/folders`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ name, parent_id: parentId }),
+    });
+    if (!response.ok) throw new Error('Failed to create folder');
+    return response.json();
+}
+
+export async function deleteDocument(spaceId: string, documentId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/spaces/${spaceId}/documents/${documentId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete document');
+}
+
+export async function deleteSpace(spaceId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/spaces/${spaceId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete space');
 }

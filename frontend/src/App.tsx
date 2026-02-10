@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoadingSplash } from './components/LoadingSplash';
 import ChatPage from './pages/ChatPage';
-import SpacesPage from './pages/SpacesPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterAgentPage from './pages/RegisterAgentPage';
@@ -49,11 +48,6 @@ function AppRoutes() {
       <Route path="/" element={
         <ProtectedRoute>
           <ChatPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/spaces" element={
-        <ProtectedRoute>
-          <SpacesPage />
         </ProtectedRoute>
       } />
       <Route path="/settings" element={

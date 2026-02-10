@@ -283,6 +283,27 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
     if not model_info:
         raise HTTPException(status_code=400, detail=f"Unknown model: {request.model}")
 
+    import logging
+    import os
+    
+    # Configure file logging
+    log_file = os.path.join(os.path.dirname(__file__), "..", "debug_rag.log")
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    
+    logger = logging.getLogger("rag_debugger")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        
+    logger.info("="*50)
+    logger.info(f"Chat Request: {request.content}")
+    logger.info(f"Selected Spaces: {request.selected_spaces}")
+    logger.info(f"Selected Docs: {request.selected_documents}")
+    logger.info(f"Active Agents: {request.active_agents}")
+
     # Get or create conversation
     if request.conversation_id:
         result = supabase.table("conversations").select("*").eq("id", request.conversation_id).execute()
@@ -343,6 +364,22 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             else:
                 lc_messages.append(AIMessage(content=msg.get("content", "")))
 
+        # --- RAG CONTEXT RETRIEVAL ---
+        from services.rag_utils import get_rag_context, format_rag_prompt
+        
+        # Get context for the agent
+        context_str, raw_chunks = await get_rag_context(
+            content=request.content,
+            selected_spaces=request.selected_spaces,
+            selected_documents=request.selected_documents
+        )
+        
+        rag_system_message = format_rag_prompt(context_str)
+        if rag_system_message:
+            # Insert as a SystemMessage at the beginning of the conversation
+            from langchain_core.messages import SystemMessage
+            lc_messages.insert(0, SystemMessage(content=rag_system_message))
+
         # Build initial agent state
         initial_state = {
             "messages": lc_messages,
@@ -359,6 +396,19 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             import asyncio
             stream_queue = asyncio.queue() if hasattr(asyncio, 'queue') else asyncio.Queue()
             citation_counter = 1 # Sequential ID for citations
+            
+            # Send RAG citations immediately if any
+            if raw_chunks:
+                rag_citations = []
+                for i, chunk in enumerate(raw_chunks):
+                    doc_name = chunk.get("metadata", {}).get("filename", "Document")
+                    rag_citations.append({
+                        "id": str(i + 1),
+                        "title": doc_name,
+                        "url": f"local://{chunk.get('document_id')}" # Placeholder for UI
+                    })
+                # No need to put in queue, we can yield directly at the start of the stream
+                # But generate_agent_stream is the generator, so we yield below.
 
             async def run_graph_background(): 
                 try:
@@ -420,6 +470,12 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                     await stream_queue.put({"type": "error", "content": f"Graph Error: {str(e)}"})
                 finally:
                     await stream_queue.put(None)
+
+            # Yield RAG citations first
+            if 'rag_citations' in locals() and rag_citations:
+                yield f"data: {json.dumps({'type': 'citations', 'citations': rag_citations})}\n\n"
+                # Update the counter so agent citations don't clash
+                citation_counter = len(rag_citations) + 1
 
             asyncio.create_task(run_graph_background())
             yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
@@ -601,10 +657,37 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
         else:
             provider = get_anthropic_provider()
 
+        # --- RAG CONTEXT RETRIEVAL ---
+        from services.rag_utils import get_rag_context, format_rag_prompt
+
+        context_str, raw_chunks = await get_rag_context(
+            content=request.content,
+            selected_spaces=request.selected_spaces,
+            selected_documents=request.selected_documents
+        )
+        
+        rag_prompt = format_rag_prompt(context_str)
+        if rag_prompt:
+             message_history.insert(0, {"role": "system", "content": rag_prompt})
+             logger.info("RAG Context injected into message history.")
+        # No need for extra exception handling here as get_rag_context handles it internally
+
         async def generate_standard_stream():
             full_response = []
             thinking_content = ""
             try:
+                # Send RAG citations first
+                if raw_chunks:
+                    rag_citations = []
+                    for i, chunk in enumerate(raw_chunks):
+                        doc_name = chunk.get("metadata", {}).get("filename", "Document")
+                        rag_citations.append({
+                            "id": str(i + 1),
+                            "title": doc_name,
+                            "url": f"local://{chunk.get('document_id')}"
+                        })
+                    yield f"data: {json.dumps({'type': 'citations', 'citations': rag_citations})}\n\n"
+
                 # Send conversation_id first
                 yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
                 

@@ -224,16 +224,17 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
 
   const pinnedSpaces = filteredSpaces.filter((s) => s.isPinned);
   const unpinnedSpaces = filteredSpaces.filter((s) => !s.isPinned);
-  const mySpaces = unpinnedSpaces.filter((s) => s.ownerId === 'current-user' || s.isPersonal);
+  const mySpaces = unpinnedSpaces.filter((s) => s.ownerId === user?.id || s.isPersonal);
   const joinedSpaces = unpinnedSpaces.filter((s) =>
-    s.ownerId !== 'current-user' &&
+    s.ownerId !== user?.id &&
     !s.isPersonal &&
-    s.members?.some(m => m.userId === 'current-user')
+    s.members?.some(m => m.userId === user?.id)
   );
   const discoverableSpaces = unpinnedSpaces.filter((s) =>
-    s.ownerId !== 'current-user' &&
+    s.ownerId !== user?.id &&
     !s.isPersonal &&
-    !s.members?.some(m => m.userId === 'current-user')
+    s.type !== 'personal' && // Explicitly hide personal spaces from discovery
+    !s.members?.some(m => m.userId === user?.id)
   );
 
   const handleRequestJoin = (space: Space) => {
@@ -291,32 +292,30 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
             {space.name}
           </span>
 
-          {/* 3-dot menu for non-personal spaces */}
-          {!space.isPersonal && (
+          {/* 3-dot menu */}
+          {(space.ownerId === user?.id || space.isPersonal) && (
             <Dropdown
               menu={{
                 items: [
-                  {
+                  ...(space.type === 'shared' ? [{
                     key: 'members',
                     icon: <TeamOutlined />,
                     label: 'Add Members',
                     onClick: () => openMembersModal(space),
-                  },
+                  }] : []),
                   {
                     key: 'documents',
                     icon: <FolderAddOutlined />,
                     label: 'Manage Documents',
                     onClick: () => openDocumentsModal(space),
                   },
-                  ...(space.ownerId === 'current-user' ? [
-                    { type: 'divider' as const },
-                    {
-                      key: 'change-icon',
-                      icon: <EditOutlined />,
-                      label: 'Change Icon',
-                      onClick: () => setIconPickerSpace(space),
-                    },
-                  ] : []),
+                  { type: 'divider' as const },
+                  {
+                    key: 'change-icon',
+                    icon: <EditOutlined />,
+                    label: 'Change Icon',
+                    onClick: () => setIconPickerSpace(space),
+                  },
                 ] as MenuProps['items'],
               }}
               trigger={['click']}
@@ -352,22 +351,24 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         </div>
 
         {/* Folder tree for personal space */}
-        {hasChildren && isExpanded && space.children && (
-          <div style={{ marginLeft: 8, borderLeft: '1px solid var(--color-border)', paddingLeft: 8, marginBottom: 8 }}>
-            {space.children.map((item) => (
-              <TreeItem
-                key={item.id}
-                item={item}
-                level={0}
-                selectedIds={selectedScope?.selectedItems.map((i) => i.id) || []}
-                onToggleSelect={handleToggleSelectItem}
-                expandedFolders={expandedFolders}
-                onToggleExpand={toggleFolderExpand}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+        {
+          hasChildren && isExpanded && space.children && (
+            <div style={{ marginLeft: 8, borderLeft: '1px solid var(--color-border)', paddingLeft: 8, marginBottom: 8 }}>
+              {space.children.map((item) => (
+                <TreeItem
+                  key={item.id}
+                  item={item}
+                  level={0}
+                  selectedIds={selectedScope?.selectedItems.map((i) => i.id) || []}
+                  onToggleSelect={handleToggleSelectItem}
+                  expandedFolders={expandedFolders}
+                  onToggleExpand={toggleFolderExpand}
+                />
+              ))}
+            </div>
+          )
+        }
+      </div >
     );
   };
 

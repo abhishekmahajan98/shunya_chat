@@ -7,8 +7,12 @@ import {
     CrownOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat, type MemberRole, mockUsers } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
+import { useChat, type MemberRole } from '../context/ChatContext';
 import SpaceIcon from './SpaceIcon';
+
+// Temporary mock users for UI
+const mockUsers: any[] = [];
 
 interface AddMembersModalProps {
     spaceId: string | null;
@@ -18,6 +22,7 @@ interface AddMembersModalProps {
 
 const AddMembersModal = ({ spaceId, open, onClose }: AddMembersModalProps) => {
     const { theme } = useTheme();
+    const { user } = useAuth();
     const {
         spaces,
         addSpaceMember,
@@ -41,8 +46,8 @@ const AddMembersModal = ({ spaceId, open, onClose }: AddMembersModalProps) => {
 
     if (!spaceId || !space) return null;
 
-    const isOwner = space.ownerId === 'current-user';
-    const isAdmin = space.members?.some(m => m.userId === 'current-user' && m.role === 'admin');
+    const isOwner = space.ownerId === user?.id;
+    const isAdmin = space.members?.some(m => m.userId === user?.id && m.role === 'admin');
     const canManageMembers = isOwner || isAdmin;
 
     // Get available users (not already members and not the owner)
@@ -208,7 +213,7 @@ const AddMembersModal = ({ spaceId, open, onClose }: AddMembersModalProps) => {
                                 <div>
                                     <div style={styles.memberName}>
                                         {member.user.name}
-                                        {member.userId === 'current-user' && ' (You)'}
+                                        {member.userId === user?.id && ' (You)'}
                                     </div>
                                     <div style={styles.memberEmail}>{member.user.email}</div>
                                 </div>
