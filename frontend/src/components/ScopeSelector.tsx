@@ -1,6 +1,6 @@
 import React from 'react';
 import { List as AntList, Checkbox as AntCheckbox, Typography as AntTypography, Button as AntButton, Empty as AntEmpty } from 'antd';
-import { FolderOutlined, CloseOutlined, FileTextOutlined } from '@ant-design/icons';
+import { FolderOutlined, CloseOutlined, FileTextOutlined, CheckOutlined } from '@ant-design/icons';
 import { useChat } from '../context/ChatContext';
 
 const { Text } = AntTypography;
@@ -56,7 +56,7 @@ const ScopeSelector: React.FC = () => {
                 <AntEmpty description="No spaces available. Create one in the Spaces tab." />
             ) : (
                 <>
-                    {selectedScope && selectedDocuments.length > 0 && (
+                    {selectedScope && selectedDocuments.length > 0 ? (
                         <div style={{ marginBottom: 16 }}>
                             <div style={{ marginBottom: 8 }}>
                                 <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Selected Documents in {selectedScope.spaceName}</Text>
@@ -108,6 +108,22 @@ const ScopeSelector: React.FC = () => {
                                     Switch to Entire Space
                                 </AntButton>
                             </div>
+                        </div>
+                    ) : selectedScope && (
+                        <div style={{
+                            marginBottom: 16,
+                            padding: '10px 12px',
+                            background: 'var(--color-primary-subtle)',
+                            borderRadius: 8,
+                            border: '1px solid var(--color-primary-light)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                        }}>
+                            <CheckOutlined style={{ color: 'var(--color-primary)', fontSize: 12 }} />
+                            <Text style={{ fontSize: 13, color: 'var(--color-primary)', fontWeight: 500 }}>
+                                Entire {selectedScope.spaceName} Selected
+                            </Text>
                         </div>
                     )}
 

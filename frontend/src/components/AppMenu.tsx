@@ -299,15 +299,11 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
             gap: 8,
             padding: '8px 10px',
             borderRadius: 8,
-            cursor: 'pointer',
+            cursor: 'default',
             transition: 'all 0.15s ease',
             background: (isSelected && !hasSpecificSelection) ? 'var(--color-sidebar-active)' : 'transparent',
             borderLeft: isSelected ? '2px solid var(--color-primary)' : '2px solid transparent',
             marginLeft: -2,
-          }}
-          onClick={() => {
-            handleSelectSpace(space);
-            toggleSpaceExpand(space.id);
           }}
           onMouseEnter={(e) => {
             if (!isSelected || hasSpecificSelection) e.currentTarget.style.background = 'var(--color-sidebar-hover)';
@@ -317,24 +313,54 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
           }}
         >
           {hasChildren && (
-            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSpaceExpand(space.id);
+              }}
+              style={{
+                fontSize: 10,
+                color: 'var(--color-text-tertiary)',
+                width: 20,
+                height: 20,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                borderRadius: 4,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-sidebar-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
               {isExpanded ? <DownOutlined /> : <RightOutlined />}
             </span>
           )}
-          <SpaceIcon icon={space.icon} style={{ fontSize: 16, color: 'var(--color-primary)' }} />
-          <span style={{
-            flex: 1,
-            fontSize: 14,
-            color: 'var(--color-text)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}>
-            {space.name}
-          </span>
+          <div
+            onClick={() => handleSelectSpace(space)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flex: 1,
+              cursor: 'pointer',
+              overflow: 'hidden'
+            }}
+          >
+            <SpaceIcon icon={space.icon} style={{ fontSize: 16, color: 'var(--color-primary)' }} />
+            <span style={{
+              fontSize: 14,
+              color: 'var(--color-text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {space.name}
+            </span>
+            {isSelected && !hasSpecificSelection && (
+              <CheckOutlined style={{ fontSize: 10, color: 'var(--color-primary)', marginLeft: 'auto' }} />
+            )}
+          </div>
 
           {/* 3-dot menu */}
           {(space.ownerId === user?.id || space.isPersonal) && (

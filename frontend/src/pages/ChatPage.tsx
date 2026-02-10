@@ -979,7 +979,7 @@ const ChatPage = () => {
                   placeholder={selectedScope
                     ? (selectedDocCount > 0
                       ? `Message ${selectedDocCount} selected documents in ${selectedScope.spaceName}...`
-                      : `Message entire ${selectedScope.spaceName} space...`)
+                      : `Message ${selectedScope.spaceName} (All contents)...`)
                     : 'Message Shunya Chat...'}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -1048,7 +1048,7 @@ const ChatPage = () => {
                           }}>
                             {selectedScope ? (
                               selectedScope.selectedItems.length === 0
-                                ? `In Scope: Entire Space`
+                                ? `In Scope: ${selectedScope.spaceName} (All)`
                                 : `In Scope: ${selectedDocCount} documents`
                             ) : 'Select Scope'}
                           </span>
