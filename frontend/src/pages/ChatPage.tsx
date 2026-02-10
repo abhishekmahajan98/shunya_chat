@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import type { MenuProps } from 'antd';
-import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, message as antMessage } from 'antd';
+import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, Tooltip, message as antMessage } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -602,8 +602,46 @@ const ChatPage = () => {
     borderLeft: '1px solid var(--color-border)',
   };
 
+  // Scope hover details
+  const scopeTooltipContent = useMemo(() => {
+    if (!selectedScope) return null;
+    const selectedDocuments = selectedScope.selectedItems.filter(i => i.type === 'document');
+
+    return (
+      <div style={{ padding: '4px 8px' }}>
+        <div style={{ fontWeight: 600, marginBottom: 4, opacity: 0.8, fontSize: 12 }}>
+          Space: {selectedScope.spaceName}
+        </div>
+        {selectedScope.selectedItems.length === 0 ? (
+          <div style={{ fontSize: 11 }}>All contents selected</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {selectedDocuments.slice(0, 10).map(item => (
+              <div key={item.id} style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileTextOutlined style={{ fontSize: 10 }} />
+                <span>{item.name}</span>
+              </div>
+            ))}
+            {selectedDocuments.length > 10 && (
+              <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>
+                + {selectedDocuments.length - 10} more documents...
+              </div>
+            )}
+            {selectedDocuments.length === 0 && (
+              <div style={{ fontSize: 11, opacity: 0.6 }}>No documents selected</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }, [selectedScope]);
+
   // Scope Popover Content
-  const scopePopoverContent = <ScopeSelector />;
+  const scopePopoverContent = useMemo(() => <ScopeSelector />, []);
+
+  const selectedDocCount = useMemo(() =>
+    selectedScope?.selectedItems.filter(i => i.type === 'document').length || 0
+    , [selectedScope]);
 
   return (
     <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden' }}>
@@ -938,7 +976,11 @@ const ChatPage = () => {
                 )}
 
                 <Input.TextArea
-                  placeholder={`Message ${selectedScope?.spaceName || 'Shunya Chat'}...`}
+                  placeholder={selectedScope
+                    ? (selectedDocCount > 0
+                      ? `Message ${selectedDocCount} selected documents in ${selectedScope.spaceName}...`
+                      : `Message entire ${selectedScope.spaceName} space...`)
+                    : 'Message Shunya Chat...'}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -980,32 +1022,38 @@ const ChatPage = () => {
 
                     {/* Scope Pill */}
                     <Popover content={scopePopoverContent} trigger="click" placement="topLeft">
-                      <button
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '4px 10px',
-                          borderRadius: 16,
-                          border: '1px solid var(--color-border)',
-                          background: selectedScope ? 'var(--color-primary-subtle)' : 'transparent',
-                          color: selectedScope ? 'var(--color-primary)' : 'var(--color-text)',
-                          fontSize: 13,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                          maxWidth: 200,
-                        }}
-                      >
-                        <FolderOutlined style={{ fontSize: 12 }} />
-                        <span style={{
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          maxWidth: 150
-                        }}>
-                          {selectedScope ? selectedScope.spaceName : 'Select Scope'}
-                        </span>
-                      </button>
+                      <Tooltip title={scopeTooltipContent} placement="top" mouseEnterDelay={0.5}>
+                        <button
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '4px 10px',
+                            borderRadius: 16,
+                            border: '1px solid var(--color-border)',
+                            background: selectedScope ? 'var(--color-primary-subtle)' : 'transparent',
+                            color: selectedScope ? 'var(--color-primary)' : 'var(--color-text)',
+                            fontSize: 13,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            maxWidth: 160,
+                          }}
+                        >
+                          <FolderOutlined style={{ fontSize: 12 }} />
+                          <span style={{
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: 150
+                          }}>
+                            {selectedScope ? (
+                              selectedScope.selectedItems.length === 0
+                                ? `In Scope: Entire Space`
+                                : `In Scope: ${selectedDocCount} documents`
+                            ) : 'Select Scope'}
+                          </span>
+                        </button>
+                      </Tooltip>
                     </Popover>
 
                     {/* Active Agents Pill */}

@@ -60,11 +60,11 @@ const TreeItem = ({ item, level, selectedIds, onToggleSelect, expandedFolders, o
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          padding: '6px 8px',
+          padding: '4px 8px',
           paddingLeft: 12 + level * 16,
           borderRadius: 6,
           cursor: 'pointer',
-          fontSize: 13,
+          fontSize: 12,
           color: 'var(--color-text)',
           transition: 'background 0.15s ease',
           background: isSelected ? 'var(--color-sidebar-active)' : 'transparent',
@@ -85,9 +85,9 @@ const TreeItem = ({ item, level, selectedIds, onToggleSelect, expandedFolders, o
         {!isFolder && <span style={{ width: 12 }} />}
 
         {isFolder ? (
-          <FolderOutlined style={{ fontSize: 14, color: 'var(--color-primary)' }} />
+          <FolderOutlined style={{ fontSize: 13, color: 'var(--color-primary)' }} />
         ) : (
-          <FileTextOutlined style={{ fontSize: 14, color: 'var(--color-text-secondary)' }} />
+          <FileTextOutlined style={{ fontSize: 13, color: 'var(--color-text-secondary)' }} />
         )}
 
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -101,8 +101,8 @@ const TreeItem = ({ item, level, selectedIds, onToggleSelect, expandedFolders, o
             onToggleSelect(item.id, item.name, item.type);
           }}
           style={{
-            width: 18,
-            height: 18,
+            width: 16,
+            height: 16,
             borderRadius: 4,
             border: isSelected ? 'none' : '1px solid var(--color-border)',
             background: isSelected ? 'var(--color-primary)' : 'transparent',
@@ -149,6 +149,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     updateSpace,
     clearMessages,
     setConversationId,
+    fetchSpaceDetails,
     // History
     conversations,
     loadConversation,
@@ -186,7 +187,11 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     });
   };
 
-  const toggleSpaceExpand = (id: string) => {
+  const toggleSpaceExpand = async (id: string) => {
+    const space = spaces.find(s => s.id === id);
+    if (!expandedSpaces.has(id) && !space?.children) {
+      await fetchSpaceDetails(id);
+    }
     setExpandedSpaces((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -196,22 +201,65 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
   };
 
   const handleSelectSpace = (space: Space) => {
-    setSelectedScope({
-      spaceId: space.id,
-      spaceName: space.name,
-      selectedItems: [],
-    });
+    if (selectedScope?.spaceId === space.id && selectedScope.selectedItems.length === 0) {
+      setSelectedScope(null);
+    } else {
+      setSelectedScope({
+        spaceId: space.id,
+        spaceName: space.name,
+        selectedItems: [],
+      });
+    }
   };
 
   const handleToggleSelectItem = (id: string, name: string, type: 'folder' | 'document') => {
     if (!selectedScope) return;
 
-    setSelectedScope({
-      ...selectedScope,
-      selectedItems: selectedScope.selectedItems.some((i) => i.id === id)
-        ? selectedScope.selectedItems.filter((i) => i.id !== id)
-        : [...selectedScope.selectedItems, { id, name, type }],
-    });
+    const currentSpace = spaces.find(s => s.id === selectedScope.spaceId);
+    if (!currentSpace) return;
+
+    // Helper to find the target item in the tree
+    const findItem = (items: SpaceItem[], targetId: string): SpaceItem | null => {
+      for (const item of items) {
+        if (item.id === targetId) return item;
+        if (item.children) {
+          const found = findItem(item.children, targetId);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    // Helper to collect all descendants (including self)
+    const collectAll = (item: SpaceItem, list: { id: string; name: string; type: 'folder' | 'document' }[] = []) => {
+      list.push({ id: item.id, name: item.name, type: item.type });
+      if (item.children) {
+        item.children.forEach(child => collectAll(child, list));
+      }
+      return list;
+    };
+
+    const targetItem = type === 'folder' ? findItem(currentSpace.children || [], id) : null;
+    const itemsToToggle = (type === 'folder' && targetItem) ? collectAll(targetItem) : [{ id, name, type }];
+    const idsToToggleSet = new Set(itemsToToggle.map(i => i.id));
+
+    const isRemoving = selectedScope.selectedItems.some((i) => i.id === id);
+
+    if (isRemoving) {
+      setSelectedScope({
+        ...selectedScope,
+        selectedItems: selectedScope.selectedItems.filter((i) => !idsToToggleSet.has(i.id)),
+      });
+    } else {
+      // Add items that aren't already selected
+      const currentlySelectedIds = new Set(selectedScope.selectedItems.map(i => i.id));
+      const newItems = itemsToToggle.filter(item => !currentlySelectedIds.has(item.id));
+
+      setSelectedScope({
+        ...selectedScope,
+        selectedItems: [...selectedScope.selectedItems, ...newItems],
+      });
+    }
   };
 
   // Filter spaces - removed search filtering
@@ -239,7 +287,8 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
   const renderSpaceItem = (space: Space) => {
     const isSelected = selectedScope?.spaceId === space.id;
     const isExpanded = expandedSpaces.has(space.id);
-    const hasChildren = space.isPersonal && space.children;
+    const hasChildren = true; // All spaces can have documents
+    const hasSpecificSelection = isSelected && selectedScope.selectedItems.length > 0;
 
     return (
       <div key={space.id}>
@@ -252,19 +301,19 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
             borderRadius: 8,
             cursor: 'pointer',
             transition: 'all 0.15s ease',
-            background: isSelected && !hasChildren ? 'var(--color-sidebar-active)' : 'transparent',
+            background: (isSelected && !hasSpecificSelection) ? 'var(--color-sidebar-active)' : 'transparent',
             borderLeft: isSelected ? '2px solid var(--color-primary)' : '2px solid transparent',
             marginLeft: -2,
           }}
           onClick={() => {
             handleSelectSpace(space);
-            if (hasChildren) toggleSpaceExpand(space.id);
+            toggleSpaceExpand(space.id);
           }}
           onMouseEnter={(e) => {
-            if (!isSelected || hasChildren) e.currentTarget.style.background = 'var(--color-sidebar-hover)';
+            if (!isSelected || hasSpecificSelection) e.currentTarget.style.background = 'var(--color-sidebar-hover)';
           }}
           onMouseLeave={(e) => {
-            if (!isSelected || hasChildren) e.currentTarget.style.background = isSelected && !hasChildren ? 'var(--color-sidebar-active)' : 'transparent';
+            if (!isSelected || hasSpecificSelection) e.currentTarget.style.background = (isSelected && !hasSpecificSelection) ? 'var(--color-sidebar-active)' : 'transparent';
           }}
         >
           {hasChildren && (
@@ -349,17 +398,20 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
         {
           hasChildren && isExpanded && space.children && (
             <div style={{ marginLeft: 8, borderLeft: '1px solid var(--color-border)', paddingLeft: 8, marginBottom: 8 }}>
-              {space.children.map((item) => (
-                <TreeItem
-                  key={item.id}
-                  item={item}
-                  level={0}
-                  selectedIds={selectedScope?.selectedItems.map((i) => i.id) || []}
-                  onToggleSelect={handleToggleSelectItem}
-                  expandedFolders={expandedFolders}
-                  onToggleExpand={toggleFolderExpand}
-                />
-              ))}
+              {(() => {
+                const selectedItemIds = selectedScope?.selectedItems.map(i => i.id) || [];
+                return space.children.map((item) => (
+                  <TreeItem
+                    key={item.id}
+                    item={item}
+                    level={0}
+                    selectedIds={selectedItemIds}
+                    onToggleSelect={handleToggleSelectItem}
+                    expandedFolders={expandedFolders}
+                    onToggleExpand={toggleFolderExpand}
+                  />
+                ));
+              })()}
             </div>
           )
         }
@@ -553,6 +605,29 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
 
       {/* Spaces List - only show when Spaces tab is active */}
       <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '8px' : '0 12px', display: (sidebarTab === 'spaces' && !collapsed) ? 'block' : 'none' }}>
+        <div style={{
+          padding: '8px 4px',
+          marginBottom: 4,
+          display: 'flex',
+          justifyContent: 'flex-end'
+        }}>
+          <Button
+            type="text"
+            size="small"
+            disabled={!selectedScope}
+            onClick={() => setSelectedScope(null)}
+            style={{
+              fontSize: 11,
+              height: 24,
+              padding: '0 8px',
+              color: selectedScope ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
+              borderRadius: 4,
+              fontWeight: 500
+            }}
+          >
+            Reset Selection
+          </Button>
+        </div>
         {!collapsed && pinnedSpaces.length > 0 && (
           <>
             <div style={{

@@ -170,6 +170,7 @@ interface ChatContextType {
     // UI Helpers (if needed by context consumers)
     sidebarTab: 'chats' | 'spaces';
     setSidebarTab: (tab: 'chats' | 'spaces') => void;
+    fetchSpaceDetails: (spaceId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -275,6 +276,49 @@ export function ChatProvider({ children }: ChatProviderProps) {
             refreshAllData();
         }
     }, [isAuthenticated]);
+
+    const transformToTree = (docs: any[]): SpaceItem[] => {
+        const itemMap = new Map<string, SpaceItem>();
+        const roots: SpaceItem[] = [];
+
+        docs.forEach(doc => {
+            itemMap.set(doc.id, {
+                id: doc.id,
+                name: doc.name,
+                type: doc.type,
+                status: doc.status,
+                size: doc.size_bytes ? Math.round(doc.size_bytes / 1024) : undefined,
+                children: doc.type === 'folder' ? [] : undefined
+            });
+        });
+
+        docs.forEach(doc => {
+            const item = itemMap.get(doc.id)!;
+            if (doc.parent_id && itemMap.has(doc.parent_id)) {
+                const parent = itemMap.get(doc.parent_id)!;
+                if (parent.children) {
+                    parent.children.push(item);
+                }
+            } else {
+                roots.push(item);
+            }
+        });
+
+        return roots;
+    };
+
+    const fetchSpaceDetails = async (spaceId: string) => {
+        try {
+            const { getSpace } = await import('../api');
+            const data = await getSpace(spaceId);
+            const tree = transformToTree(data.documents);
+            setSpaces(prev => prev.map(s =>
+                s.id === spaceId ? { ...s, children: tree } : s
+            ));
+        } catch (error) {
+            console.error('Failed to fetch space details:', error);
+        }
+    };
 
     const toggleSpacePin = (spaceId: string) => {
         setSpaces((prev) =>
@@ -482,6 +526,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 loadConversation,
                 sidebarTab,
                 setSidebarTab,
+                fetchSpaceDetails,
             }}
         >
             {children}
