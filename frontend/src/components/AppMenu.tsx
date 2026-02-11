@@ -43,7 +43,7 @@ interface TreeItemProps {
   item: SpaceItem;
   level: number;
   selectedIds: string[];
-  onToggleSelect: (id: string, name: string, type: 'folder' | 'document', spaceId: string, spaceName: string) => void;
+  onToggleSelect: (id: string, name: string, type: 'folder' | 'document') => void;
   expandedFolders: Set<string>;
   onToggleExpand: (id: string) => void;
 }
@@ -98,7 +98,7 @@ const TreeItem = ({ item, level, selectedIds, onToggleSelect, expandedFolders, o
         <div
           onClick={(e) => {
             e.stopPropagation();
-            onToggleSelect(item.id, item.name, item.type, '', ''); // space info not needed here as it's passed from root
+            onToggleSelect(item.id, item.name, item.type);
           }}
           style={{
             width: 16,
@@ -212,15 +212,10 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     }
   };
 
-  const handleToggleSelectItem = (id: string, name: string, type: 'folder' | 'document', spaceId?: string, spaceName?: string) => {
-    // If spaceId is provided, we use it (initial click from sidebar)
-    // If not, we fall back to selectedScope (nested TreeItem clicks)
-    const targetSpaceId = spaceId || selectedScope?.spaceId;
-    const targetSpaceName = spaceName || selectedScope?.spaceName;
+  const handleToggleSelectItem = (id: string, name: string, type: 'folder' | 'document') => {
+    if (!selectedScope) return;
 
-    if (!targetSpaceId || !targetSpaceName) return;
-
-    const currentSpace = spaces.find(s => s.id === targetSpaceId);
+    const currentSpace = spaces.find(s => s.id === selectedScope.spaceId);
     if (!currentSpace) return;
 
     // Helper to find the target item in the tree
@@ -248,23 +243,21 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     const itemsToToggle = (type === 'folder' && targetItem) ? collectAll(targetItem) : [{ id, name, type }];
     const idsToToggleSet = new Set(itemsToToggle.map(i => i.id));
 
-    const isRemoving = (selectedScope?.spaceId === targetSpaceId) && selectedScope.selectedItems.some((i) => i.id === id);
+    const isRemoving = selectedScope.selectedItems.some((i) => i.id === id);
 
-    if (isRemoving && selectedScope) {
+    if (isRemoving) {
       setSelectedScope({
         ...selectedScope,
         selectedItems: selectedScope.selectedItems.filter((i) => !idsToToggleSet.has(i.id)),
       });
     } else {
-      // Switch space or add to current space
-      const baseItems = (selectedScope?.spaceId === targetSpaceId) ? selectedScope.selectedItems : [];
-      const currentlySelectedIds = new Set(baseItems.map(i => i.id));
+      // Add items that aren't already selected
+      const currentlySelectedIds = new Set(selectedScope.selectedItems.map(i => i.id));
       const newItems = itemsToToggle.filter(item => !currentlySelectedIds.has(item.id));
 
       setSelectedScope({
-        spaceId: targetSpaceId,
-        spaceName: targetSpaceName,
-        selectedItems: [...baseItems, ...newItems],
+        ...selectedScope,
+        selectedItems: [...selectedScope.selectedItems, ...newItems],
       });
     }
   };
@@ -432,16 +425,14 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
           hasChildren && isExpanded && space.children && (
             <div style={{ marginLeft: 8, borderLeft: '1px solid var(--color-border)', paddingLeft: 8, marginBottom: 8 }}>
               {(() => {
-                const selectedItemIds = selectedScope?.spaceId === space.id
-                  ? selectedScope.selectedItems.map(i => i.id)
-                  : [];
+                const selectedItemIds = selectedScope?.selectedItems.map(i => i.id) || [];
                 return space.children.map((item) => (
                   <TreeItem
                     key={item.id}
                     item={item}
                     level={0}
                     selectedIds={selectedItemIds}
-                    onToggleSelect={(id, name, type) => handleToggleSelectItem(id, name, type, space.id, space.name)}
+                    onToggleSelect={handleToggleSelectItem}
                     expandedFolders={expandedFolders}
                     onToggleExpand={toggleFolderExpand}
                   />
