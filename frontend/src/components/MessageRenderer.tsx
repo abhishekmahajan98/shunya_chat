@@ -2,6 +2,7 @@ import { useState, useEffect, memo } from 'react';
 import { DownOutlined, UpOutlined, CheckCircleFilled, LoadingOutlined, FileTextOutlined, BulbOutlined, CopyOutlined, CheckOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import type { Message, Citation, ReasoningStep } from '../context/ChatContext';
 import AIResponse from './AIResponse';
+import { InnovationLoader } from './InnovationLoader';
 
 interface MessageRendererProps {
     message: Message;
@@ -432,20 +433,10 @@ const MessageRenderer = memo(({ message }: MessageRendererProps) => {
             <div style={{
                 display: 'flex',
                 justifyContent: 'flex-start',
-                marginBottom: 12,
+                marginBottom: 20,
+                paddingLeft: 12, // Align with typical message start
             }}>
-                <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '16px 16px 16px 4px',
-                    background: 'var(--color-msg-ai)',
-                    color: 'var(--color-msg-ai-text)',
-                }}>
-                    <div className="typing-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                </div>
+                <InnovationLoader />
             </div>
         );
     }
