@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pathlib import Path
 from config import settings
 
@@ -45,9 +46,17 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+# Catchall route for React Router - must be before StaticFiles mount
+@app.get("/{catchall:path}")
+async def serve_react_app(catchall: str):
+    """Serve index.html for all non-API routes to enable client-side routing."""
+    static_path = Path(__file__).parent / "static" / "index.html"
+    if static_path.exists():
+        return FileResponse(static_path)
+    return {"error": "Frontend not found"}
+
 # Serve frontend static files at root path
 # This must be last so API routes take precedence
-# Railway build will copy frontend/dist to backend/static
 frontend_dist = Path(__file__).parent / "static"
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
