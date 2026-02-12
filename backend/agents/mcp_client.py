@@ -26,6 +26,7 @@ class MCPServerConfig:
     capabilities: list[str] = field(default_factory=list)
     system_prompt: str = ""
     has_access: bool = True
+    is_internal: bool = True
 
 
 class MCPClient:
@@ -54,7 +55,8 @@ class MCPClient:
                     url=agent["url"],
                     capabilities=agent.get("capabilities", []),
                     system_prompt=agent.get("system_prompt", ""),
-                    has_access=agent.get("has_access", True)
+                    has_access=agent.get("has_access", True),
+                    is_internal=agent.get("is_internal", True)
                 )
                 new_servers[server.id] = server
             
