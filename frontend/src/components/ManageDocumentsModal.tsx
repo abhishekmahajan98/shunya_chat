@@ -13,10 +13,12 @@ import {
     ClockCircleOutlined,
     ExclamationCircleOutlined,
 } from '@ant-design/icons';
+import type { UploadFile } from 'antd';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useChat, type SpaceItem, type Space } from '../context/ChatContext';
 import SpaceIcon from './SpaceIcon';
+import { InnovationLoader } from './InnovationLoader';
 
 const { Dragger } = Upload;
 
@@ -42,6 +44,7 @@ const ManageDocumentsModal = ({ spaceId, open, onClose }: ManageDocumentsModalPr
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
     const [isCreatingFolder, setIsCreatingFolder] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
+    const [fileList, setFileList] = useState<UploadFile[]>([]);
 
     // Fetch space details including documents when modal opens
     const fetchDetails = async () => {
@@ -112,6 +115,7 @@ const ManageDocumentsModal = ({ spaceId, open, onClose }: ManageDocumentsModalPr
             message.error(`Failed to upload ${file.name}`);
         } finally {
             setIsUploading(false);
+            setFileList([]);
         }
         return false;
     };
@@ -327,21 +331,68 @@ const ManageDocumentsModal = ({ spaceId, open, onClose }: ManageDocumentsModalPr
                             )}
                         </div>
 
-                        <Dragger
-                            multiple={true}
-                            beforeUpload={handleUpload}
-                            showUploadList={true}
-                            disabled={isUploading}
-                            style={{ background: 'transparent' }}
-                        >
-                            <p className="ant-upload-drag-icon">
-                                <UploadOutlined style={{ color: '#EDAC33', fontSize: 24 }} />
-                            </p>
-                            <p className="ant-upload-text" style={{ fontSize: 14 }}>Drag files here to upload to <b>{targetLabel}</b></p>
-                            <p className="ant-upload-hint" style={{ fontSize: 12, opacity: 0.5 }}>
-                                PDFs, Docs, or text files for knowledge extraction.
-                            </p>
-                        </Dragger>
+                        <div style={{ position: 'relative' }}>
+                            {isUploading && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    background: theme === 'dark' ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    zIndex: 10,
+                                    borderRadius: 8,
+                                    backdropFilter: 'blur(2px)',
+                                    gap: 12
+                                }}>
+                                    <InnovationLoader scale={1.2} />
+                                    <div style={{
+                                        color: '#EDAC33',
+                                        fontWeight: 600,
+                                        fontSize: 14,
+                                        letterSpacing: '0.02em'
+                                    }}>
+                                        Uploading & Indexing...
+                                    </div>
+                                </div>
+                            )}
+                            <Dragger
+                                multiple={true}
+                                beforeUpload={handleUpload}
+                                fileList={fileList}
+                                onChange={({ fileList }) => setFileList(fileList)}
+                                showUploadList={true}
+                                disabled={isUploading}
+                                style={{ background: 'transparent' }}
+                            >
+                                <p className="ant-upload-drag-icon">
+                                    <UploadOutlined style={{ color: '#EDAC33', fontSize: 24 }} />
+                                </p>
+                                <p className="ant-upload-text" style={{ fontSize: 14 }}>Drag files here to upload to <b>{targetLabel}</b></p>
+                                <p className="ant-upload-hint" style={{ fontSize: 12, opacity: 0.5 }}>
+                                    PDFs, Docs, or text files for knowledge extraction.
+                                </p>
+                            </Dragger>
+                        </div>
+                        <div style={{
+                            marginTop: 12,
+                            padding: '8px 12px',
+                            background: theme === 'dark' ? 'rgba(250, 173, 20, 0.05)' : 'rgba(250, 173, 20, 0.05)',
+                            borderRadius: 8,
+                            border: `1px solid ${theme === 'dark' ? 'rgba(250, 173, 20, 0.2)' : 'rgba(250, 173, 20, 0.2)'}`,
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 8
+                        }}>
+                            <ExclamationCircleOutlined style={{ color: '#faad14', marginTop: 2 }} />
+                            <div style={{ fontSize: 12, color: theme === 'dark' ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.65)', lineHeight: 1.5 }}>
+                                <b style={{ color: '#faad14' }}>Note:</b> Document upload and parsing is not async for now. Large documents may take a while to upload or may fail.
+                            </div>
+                        </div>
                     </div>
                 )}
 
