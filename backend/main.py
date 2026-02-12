@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from config import settings
 
 from routers.chat import router as chat_router
@@ -43,4 +45,8 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
-# Trigger reload for synthesizer prompt update
+# Serve frontend static files at root path
+# This must be last so API routes take precedence
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
