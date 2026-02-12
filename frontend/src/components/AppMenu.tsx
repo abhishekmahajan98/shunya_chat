@@ -212,10 +212,20 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     }
   };
 
-  const handleToggleSelectItem = (id: string, name: string, type: 'folder' | 'document') => {
-    if (!selectedScope) return;
+  const handleToggleSelectItem = (spaceId: string, spaceName: string, id: string, name: string, type: 'folder' | 'document') => {
+    // Determine the baseline scope to work with
+    let currentScope = selectedScope;
 
-    const currentSpace = spaces.find(s => s.id === selectedScope.spaceId);
+    // If no scope is selected, or we're switching spaces from an item click
+    if (!currentScope || currentScope.spaceId !== spaceId) {
+      currentScope = {
+        spaceId,
+        spaceName,
+        selectedItems: [],
+      };
+    }
+
+    const currentSpace = spaces.find(s => s.id === spaceId);
     if (!currentSpace) return;
 
     // Helper to find the target item in the tree
@@ -243,21 +253,26 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
     const itemsToToggle = (type === 'folder' && targetItem) ? collectAll(targetItem) : [{ id, name, type }];
     const idsToToggleSet = new Set(itemsToToggle.map(i => i.id));
 
-    const isRemoving = selectedScope.selectedItems.some((i) => i.id === id);
+    const isRemoving = currentScope.selectedItems.some((i) => i.id === id);
 
     if (isRemoving) {
-      setSelectedScope({
-        ...selectedScope,
-        selectedItems: selectedScope.selectedItems.filter((i) => !idsToToggleSet.has(i.id)),
-      });
+      const nextItems = currentScope.selectedItems.filter((i) => !idsToToggleSet.has(i.id));
+      if (nextItems.length === 0) {
+        setSelectedScope(null);
+      } else {
+        setSelectedScope({
+          ...currentScope,
+          selectedItems: nextItems,
+        });
+      }
     } else {
       // Add items that aren't already selected
-      const currentlySelectedIds = new Set(selectedScope.selectedItems.map(i => i.id));
+      const currentlySelectedIds = new Set(currentScope.selectedItems.map(i => i.id));
       const newItems = itemsToToggle.filter(item => !currentlySelectedIds.has(item.id));
 
       setSelectedScope({
-        ...selectedScope,
-        selectedItems: [...selectedScope.selectedItems, ...newItems],
+        ...currentScope,
+        selectedItems: [...currentScope.selectedItems, ...newItems],
       });
     }
   };
@@ -432,7 +447,7 @@ const AppMenu = ({ collapsed, isTablet, onCollapseToggle }: AppMenuProps) => {
                     item={item}
                     level={0}
                     selectedIds={selectedItemIds}
-                    onToggleSelect={handleToggleSelectItem}
+                    onToggleSelect={(id, name, type) => handleToggleSelectItem(space.id, space.name, id, name, type)}
                     expandedFolders={expandedFolders}
                     onToggleExpand={toggleFolderExpand}
                   />
