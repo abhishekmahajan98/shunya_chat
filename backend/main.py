@@ -47,6 +47,7 @@ async def health_check():
 
 # Serve frontend static files at root path
 # This must be last so API routes take precedence
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+# Railway build will copy frontend/dist to backend/static
+frontend_dist = Path(__file__).parent / "static"
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
