@@ -377,7 +377,7 @@ const CitationsDisplay = ({ citations }: { citations: Citation[] }) => {
                                 minWidth: 20,
                             }}>[{citation.id}]</span>
                             <a
-                                href={citation.title}
+                                href={citation.url || citation.title}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 style={{

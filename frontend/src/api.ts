@@ -37,6 +37,8 @@ export interface MessageOut {
     created_at: string;
     attachments?: { id: string; name: string; type: string; url: string; size: number }[];
     reasoning?: { steps: { id: string; text: string; status: 'pending' | 'running' | 'complete' | 'failed' }[]; isExpanded?: boolean };
+    citations?: { id: string; title: string; url?: string; page?: number }[];
+    agents?: string[];
 }
 
 export interface ConversationDetail {
@@ -152,6 +154,7 @@ export interface AgentResult {
 export interface Citation {
     id: string;
     title: string;
+    url?: string;
     page?: number;
 }
 
@@ -172,7 +175,7 @@ export interface AgentStreamChunk {
     tool_name?: string;
     input?: string;
     error?: string; // added this
-    citations?: { id: string; title: string; page?: number }[];
+    citations?: { id: string; title: string; url?: string; page?: number }[];
     // Plan
     plan?: { agent: string; goal: string; id?: string }[];
 }

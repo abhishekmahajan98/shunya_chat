@@ -396,6 +396,8 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             import asyncio
             stream_queue = asyncio.queue() if hasattr(asyncio, 'queue') else asyncio.Queue()
             citation_counter = 1 # Sequential ID for citations
+            all_citations = []
+            all_agents = []
             
             # Send RAG citations immediately if any
             if raw_chunks:
@@ -436,6 +438,8 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                                             "goal": step.get('goal'),
                                             "status": "pending"
                                         })
+                                    # Track agents for DB
+                                    all_agents.extend([step.get("agent") for step in active_agents if step.get("agent")])
                                 else:
                                     # Emit empty plan to close the "Analyzing..." step in UI
                                     await stream_queue.put({"type": "plan_created", "plan": []})
@@ -453,6 +457,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                                             citation_list.append({"id": str(citation_counter), "title": url, "url": url})
                                             citation_counter += 1
                                         await stream_queue.put({"type": "citations", "citations": citation_list})
+                                        all_citations.extend(citation_list)
 
                             elif node_name == "synthesizer":
                                 if node_output.get("needs_synthesis", False):
@@ -474,6 +479,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
             # Yield RAG citations first
             if 'rag_citations' in locals() and rag_citations:
                 yield f"data: {json.dumps({'type': 'citations', 'citations': rag_citations})}\n\n"
+                all_citations.extend(rag_citations)
                 # Update the counter so agent citations don't clash
                 citation_counter = len(rag_citations) + 1
 
@@ -615,6 +621,8 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                     "content": final_response,
                     "created_at": datetime.utcnow().isoformat(),
                     "reasoning": reasoning_data,
+                    "citations": all_citations if all_citations else None,
+                    "agents": list(set(all_agents)) if all_agents else None,
                 }
                 supabase.table("messages").insert(assistant_message).execute()
 
@@ -675,6 +683,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
         async def generate_standard_stream():
             full_response = []
             thinking_content = ""
+            all_citations = []
             try:
                 # Send RAG citations first
                 if raw_chunks:
@@ -687,6 +696,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                             "url": f"local://{chunk.get('document_id')}"
                         })
                     yield f"data: {json.dumps({'type': 'citations', 'citations': rag_citations})}\n\n"
+                    all_citations.extend(rag_citations)
 
                 # Send conversation_id first
                 yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
@@ -717,6 +727,7 @@ async def send_message_stream(request: MessageCreate, background_tasks: Backgrou
                     "content": "".join(full_response),
                     "created_at": datetime.utcnow().isoformat(),
                     "reasoning": reasoning_data,
+                    "citations": all_citations if all_citations else None,
                 }
                 supabase.table("messages").insert(assistant_message).execute()
                     

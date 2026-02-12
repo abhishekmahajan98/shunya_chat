@@ -68,6 +68,14 @@ class MessageCreate(BaseModel):
     selected_documents: Optional[list[str]] = None  # List of specific document IDs for RAG
 
 
+class Citation(BaseModel):
+    """Citation for a message."""
+    id: str
+    title: str
+    url: Optional[str] = None
+    page: Optional[int] = None
+
+
 class MessageResponse(BaseModel):
     """Response from a chat message."""
     conversation_id: str
@@ -93,6 +101,8 @@ class MessageOut(BaseModel):
     created_at: datetime
     attachments: Optional[list[Attachment]] = None
     reasoning: Optional[dict] = None
+    citations: Optional[list[Citation]] = None
+    agents: Optional[list[str]] = None
 
 
 class ConversationDetail(BaseModel):

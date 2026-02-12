@@ -66,6 +66,7 @@ export interface ScopeSelection {
 export interface Citation {
     id: string;
     title: string;
+    url?: string;
     page?: number;
 }
 
@@ -467,6 +468,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 timestamp: new Date(msg.created_at),
                 attachments: msg.attachments as any,
                 reasoning: msg.reasoning,
+                citations: msg.citations,
+                agents: msg.agents,
             }));
             setMessages(uiMessages);
         } catch (error) {
