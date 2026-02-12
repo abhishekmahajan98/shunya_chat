@@ -1,5 +1,3 @@
-import sys
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
@@ -9,11 +7,7 @@ from routers.agents import router as agents_router
 from routers.auth import router as auth_router
 from routers.spaces import router as spaces_router
 
-# Add project root to path for importing MCP servers
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# Import MCP servers
+# Import MCP servers (now local to backend directory)
 from mcp_servers.calculator.server import mcp as calculator_mcp
 from mcp_servers.search.server import mcp as search_mcp
 
