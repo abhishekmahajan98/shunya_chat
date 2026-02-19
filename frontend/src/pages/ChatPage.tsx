@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import type { MenuProps } from 'antd';
-import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, Tooltip, message as antMessage } from 'antd';
+import { Layout, Input, Button, Dropdown, Grid, Drawer, Popover, Tooltip, Divider, message as antMessage } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -9,26 +9,31 @@ import {
   SunOutlined,
   MoonOutlined,
   FolderOutlined,
-  RobotOutlined,
   FileTextOutlined,
   CloseOutlined,
   ClockCircleOutlined,
+  RobotOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
 import { useChat, type Attachment } from '../context/ChatContext';
-import AppMenu from '../components/AppMenu';
-import RightSidebar from '../components/RightSidebar';
+import { VerticalNav } from '../components/VerticalNav';
+import { SpacesPanel } from '../components/SpacesPanel';
+import { AgentsPanel } from '../components/AgentsPanel';
 import MessageRenderer from '../components/MessageRenderer';
 import ScopeSelector from '../components/ScopeSelector';
 import { streamMessage, type AgentStreamChunk, uploadFile } from '../api';
+import { useNavigate } from 'react-router-dom';
 
-const { Sider, Content } = Layout;
+const { Content } = Layout;
+const { useBreakpoint } = Grid;
 
 
 // No longer hardcoded - fetched from API
 
 const ChatPage = () => {
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
   const {
     messages,
     addMessage,
@@ -38,17 +43,34 @@ const ChatPage = () => {
     backgroundTasks,
     conversationId,
     setConversationId,
+    clearMessages,
   } = useChat();
 
   const [inputValue, setInputValue] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
-  const [leftDrawerVisible, setLeftDrawerVisible] = useState(false);
-  const [rightDrawerVisible, setRightDrawerVisible] = useState(false);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightExpanded, setRightExpanded] = useState(false);
+  const [mobileNavVisible, setMobileNavVisible] = useState(false);
 
+  // Refs
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // States
   const [modelOptions, setModelOptions] = useState<{ id: string, name: string, detail: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState<{ id: string, name: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Breakpoint for mobile/tablet
+  const screens = useBreakpoint();
+  const isTablet = !screens.lg;
+
+  const handleNewChat = () => {
+    clearMessages();
+    setConversationId(null);
+    navigate('/');
+  };
 
   // Fetch models from backend on mount
   useEffect(() => {
@@ -68,12 +90,6 @@ const ChatPage = () => {
       });
     });
   }, []);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Attachments state
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -106,23 +122,11 @@ const ChatPage = () => {
     setAttachments(prev => prev.filter(a => a.id !== id));
   };
 
-  const screens = Grid.useBreakpoint();
-  const isTablet = !screens.lg;
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
   // Auto-scroll to bottom of messages
   useEffect(() => {
     if (scrollRef.current) {
       const scrollContainer = scrollRef.current;
-
-      // Use 'auto' (instant) scrolling if we are loading or streaming to prevent 
-      // the "chunky" feel of smooth scrolling fighting with rapid updates
       const behavior = isLoading ? 'auto' : 'smooth';
-
-      // Only scroll if we're near the bottom or it's a new message
-      // A simple heuristic: always scroll for now, but use instant behavior for fluidity
       scrollContainer.scrollTo({
         top: scrollContainer.scrollHeight,
         behavior: behavior
@@ -154,7 +158,7 @@ const ChatPage = () => {
     addMessage({
       type: 'sync',
       sender: 'assistant',
-      content: `I speak $\LaTeX$ fluently!\n\n**Inline:** The energy-mass equivalence is $E=mc^2$.\n\n**Block:**\n$$\nf(x) = \\int_{-\\infty}^{\\infty} \\hat f(\\xi)\\,e^{2\\pi i \\xi x} \\,d\\xi\n$$`
+      content: `I speak $\\LaTeX$ fluently!\n\n**Inline:** The energy-mass equivalence is $E=mc^2$.\n\n**Block:**\n$$\nf(x) = \\int_{-\\infty}^{\\infty} \\hat f(\\xi)\\,e^{2\\pi i \\xi x} \\,d\\xi\n$$`
     });
 
     // 4. Tables
@@ -204,9 +208,6 @@ const ChatPage = () => {
 
 
     // Add user message to UI
-    console.log('Sending Message. Selected Scope:', selectedScope);
-    console.log('Space ID:', selectedScope?.spaceId);
-
     addMessage({
       type: 'sync',
       sender: 'user',
@@ -215,7 +216,6 @@ const ChatPage = () => {
     });
 
     // Create placeholder for assistant response with pending state (loader)
-    // We don't assume reasoning yet - we'll upgrade the message type when thinking actually starts
     const assistantMsgId = addMessage({
       type: 'sync',
       sender: 'assistant',
@@ -225,10 +225,7 @@ const ChatPage = () => {
 
     let thinkingContent = '';
     let textContent = '';
-    // Track agents in a local variable (React state is async, causes stale closure)
     const collectedAgents: string[] = [];
-    // Track reasoning steps locally due to closure
-    // We define this interface locally to match ReasoningStep but without import issues if specific props differ
     interface LocalReasoningStep { id: string; text: string; status: 'pending' | 'running' | 'complete' | 'failed' }
     const collectedSteps: LocalReasoningStep[] = [];
 
@@ -242,7 +239,6 @@ const ChatPage = () => {
           if (chunk.type === 'meta' && chunk.conversation_id) {
             setConversationId(chunk.conversation_id);
           } else if (chunk.type === 'status') {
-            // General status update from Router/System
             const stepId = 'system-planning';
             const stepText = chunk.content || 'Processing...';
 
@@ -250,7 +246,6 @@ const ChatPage = () => {
             if (existingStepIndex >= 0) {
               collectedSteps[existingStepIndex] = { ...collectedSteps[existingStepIndex], text: stepText, status: 'running' };
             } else {
-              // Insert at start
               collectedSteps.unshift({ id: stepId, text: stepText, status: 'running' });
             }
 
@@ -260,10 +255,8 @@ const ChatPage = () => {
             });
 
           } else if (chunk.type === 'plan_created') {
-            // Initialize agent steps based on plan
             const plan = chunk.plan || [];
 
-            // Mark system planning as complete if it exists
             const sysIdx = collectedSteps.findIndex(s => s.id === 'system-planning');
             if (sysIdx >= 0) {
               collectedSteps[sysIdx] = { ...collectedSteps[sysIdx], status: 'complete', text: 'Plan created' };
@@ -271,12 +264,7 @@ const ChatPage = () => {
 
             plan.forEach(step => {
               const agentId = step.agent;
-              // Use unique ID from backend if available, fallback to agent name
               const stepId = step.id || `agent-${agentId}`;
-              // Try to find name from activeAgents or use ID
-              // We don't have full agent info here easily unless we lookup.
-              // chunk.plan objects might just have agent/goal.
-              // We'll use ID/Goal for now.
               const stepText = `${agentId}: ${step.goal}`;
 
               if (!collectedSteps.find(s => s.id === stepId)) {
@@ -300,25 +288,21 @@ const ChatPage = () => {
             const inputVal = chunk.input || '';
             const toolText = `Using ${toolName}: ${inputVal}`;
 
-            // Create step
             const newToolStep: LocalReasoningStep = {
               id: toolId,
               text: toolText,
               status: 'running'
             };
 
-            // Find parent
             let parentIdx = -1;
             if (chunk.parent_id) {
               parentIdx = collectedSteps.findIndex(s => s.id === chunk.parent_id);
             }
-            // Fallback
             if (parentIdx === -1) {
               parentIdx = collectedSteps.findIndex(s => s.status === 'running' && !s.id.startsWith('tool-'));
             }
 
             if (parentIdx >= 0) {
-              // Insert after parent and its existing children
               let insertIdx = parentIdx + 1;
               while (insertIdx < collectedSteps.length && collectedSteps[insertIdx].id.startsWith('tool-')) {
                 insertIdx++;
@@ -376,90 +360,30 @@ const ChatPage = () => {
             }
 
           } else if (chunk.type === 'agent_status') {
-            // Agent status update (Plan execution)
             const agentName = chunk.name || chunk.agent || '';
             const goal = chunk.goal || '';
-
-            // Use unique ID from backend if available for plan steps
             const planStepId = chunk.id || `agent-${chunk.agent}`;
-
-            // Unified Status Determination
             const status = chunk.status as 'pending' | 'running' | 'complete' | 'failed';
-            const isToolEvent = false; // Handled by tool_start
-            const isToolComplete = false; // Handled by tool_end
-            const isToolFailed = false; // Handled by tool_error
 
-            if (isToolEvent) {
-              // New Tool Step - Insert as child of current agent step
-              // Find parent agent step (running one)
-              let parentIdx = -1;
-              if (chunk.parent_id) {
-                parentIdx = collectedSteps.findIndex(s => s.id === chunk.parent_id);
-              }
+            if (chunk.agent && !collectedAgents.includes(chunk.agent)) {
+              collectedAgents.push(chunk.agent);
+            }
 
-              if (parentIdx === -1) {
-                // Fallback: Find the last running agent step (non-tool)
-                parentIdx = collectedSteps.findIndex(s => s.status === 'running' && !s.id.startsWith('tool-'));
-              }
-              const toolId = `tool-${chunk.tool_run_id || ''}`;
-              const toolText = chunk.goal || '';
+            const stepText = goal ? `${agentName}: ${goal}` : `${agentName} working...`;
+            const existingStepIndex = collectedSteps.findIndex(s => s.id === planStepId);
 
-              // Create tool step if not exists
-              if (!collectedSteps.find(s => s.id === toolId)) {
-                const newToolStep: LocalReasoningStep = { id: toolId, text: toolText, status: 'running' };
-                if (parentIdx >= 0 && parentIdx < collectedSteps.length - 1) {
-                  // Insert after parent
-                  collectedSteps.splice(parentIdx + 1, 0, newToolStep);
-                } else {
-                  collectedSteps.push(newToolStep);
-                }
-              }
-              // Mark tool step as complete/failed and append output/error
-              let toolIdx = collectedSteps.findIndex(s => s.id === `tool-${chunk.tool_run_id}`);
-
-              if (toolIdx >= 0) {
-                const currentText = collectedSteps[toolIdx].text;
-                const resultText = isToolFailed ? `Error: ${chunk.error}` : chunk.output;
-
-                // Only append if not already there, and if resultText is not empty
-                const newText = (resultText && !currentText.includes(String(resultText).substring(0, 20)))
-                  ? `${currentText} \n-> ${resultText}`
-                  : currentText;
-
-                collectedSteps[toolIdx] = {
-                  ...collectedSteps[toolIdx],
-                  status: isToolFailed ? 'failed' : 'complete',
-                  text: newText
-                };
-              }
+            if (existingStepIndex >= 0) {
+              collectedSteps[existingStepIndex] = {
+                ...collectedSteps[existingStepIndex],
+                status: status,
+                text: goal ? stepText : collectedSteps[existingStepIndex].text
+              };
             } else {
-              // Normal Agent Goal Update (Plan Step)
-              if (chunk.agent && !collectedAgents.includes(chunk.agent)) {
-                collectedAgents.push(chunk.agent);
-              }
-
-              const stepText = goal ? `${agentName}: ${goal}` : `${agentName} working...`;
-              const existingStepIndex = collectedSteps.findIndex(s => s.id === planStepId);
-
-              if (existingStepIndex >= 0) {
-                // Update existing step by its unique ID
-                // Fix status mapping to handle 'failed'
-                const newStatus: 'pending' | 'running' | 'complete' | 'failed' = status;
-
-                collectedSteps[existingStepIndex] = {
-                  ...collectedSteps[existingStepIndex],
-                  status: newStatus,
-                  // Only update text for high-level goal updates if it's not a tool event or completion
-                  text: (goal && !isToolEvent && !isToolComplete && !isToolFailed) ? stepText : collectedSteps[existingStepIndex].text
-                };
-              } else {
-                // New step (e.g. if we missed plan_created)
-                collectedSteps.push({
-                  id: planStepId,
-                  text: stepText,
-                  status: status === 'pending' ? 'pending' : 'running'
-                });
-              }
+              collectedSteps.push({
+                id: planStepId,
+                text: stepText,
+                status: status === 'pending' ? 'pending' : 'running'
+              });
             }
 
             updateMessage(assistantMsgId, {
@@ -473,9 +397,7 @@ const ChatPage = () => {
             });
 
           } else if (chunk.type === 'agent_result') {
-            // Agent completed step
             const stepId = chunk.id || `agent-${chunk.agent}`;
-
             const existingStepIndex = collectedSteps.findIndex(s => s.id === stepId);
 
             if (existingStepIndex >= 0) {
@@ -497,27 +419,24 @@ const ChatPage = () => {
           } else if (chunk.type === 'thinking') {
             thinkingContent += chunk.content || '';
             updateMessage(assistantMsgId, {
-              pending: false, // Stop loader
+              pending: false,
               type: 'reasoning',
               reasoning: {
-                // Focus on thinking content as requested by user
                 steps: [...collectedSteps, { id: 'thinking', text: thinkingContent, status: 'running' }],
                 isExpanded: true
               },
             });
           } else if (chunk.type === 'text') {
             textContent += chunk.content || '';
-            // Transition to content display and clear pending
             updateMessage(assistantMsgId, {
-              pending: false, // Stop loader
+              pending: false,
               content: textContent,
               reasoning: (thinkingContent || collectedSteps.length > 0) ? {
                 steps: [...collectedSteps, ...(thinkingContent ? [{ id: 'thinking', text: thinkingContent, status: 'complete' as const }] : [])],
-                isExpanded: false // Collapse when text arrives
+                isExpanded: false
               } : undefined,
             });
           } else if (chunk.type === 'done') {
-            // Use local collectedAgents
             updateMessage(assistantMsgId, {
               pending: false,
               type: (thinkingContent || collectedSteps.length > 0) ? 'reasoning' : 'sync',
@@ -529,12 +448,9 @@ const ChatPage = () => {
               } : undefined,
             });
           } else if (chunk.type === 'citations') {
-            // Append citations to the current message
-            // Note: chunk.citations is already an array
             const newCitations = chunk.citations || [];
-            updateMessage(assistantMsgId, (prev: any) => {
-              const existingCitations = prev.citations || [];
-              // Filter out duplicates by URL
+            updateMessage(assistantMsgId, (prevValue: any) => {
+              const existingCitations = prevValue?.citations || [];
               const uniqueNewCitations = newCitations.filter(
                 (newCit: any) => !existingCitations.some((oldCit: any) => oldCit.url === newCit.url)
               );
@@ -551,7 +467,7 @@ const ChatPage = () => {
           }
         },
         conversationId || undefined,
-        activeAgents.map(a => a.id),  // Pass active agent IDs from UI
+        activeAgents.map(a => a.id),
         currentAttachments.length > 0 ? currentAttachments : undefined,
         selectedScope?.spaceId ? [selectedScope.spaceId] : undefined,
         selectedScope?.selectedItems.map(i => i.id)
@@ -565,7 +481,6 @@ const ChatPage = () => {
       });
     } finally {
       setIsLoading(false);
-
     }
   };
 
@@ -590,17 +505,6 @@ const ChatPage = () => {
       </div>
     ),
   }));
-
-  // Sidebar styles
-  const siderStyle = {
-    background: 'var(--color-sidebar)',
-    borderRight: '1px solid var(--color-border)',
-  };
-
-  const rightSiderStyle = {
-    background: 'var(--color-sidebar)',
-    borderLeft: '1px solid var(--color-border)',
-  };
 
   // Scope hover details
   const scopeTooltipContent = useMemo(() => {
@@ -644,55 +548,18 @@ const ChatPage = () => {
     , [selectedScope]);
 
   return (
-    <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden' }}>
-      {/* Left Sidebar */}
-      {isTablet ? (
-        <Drawer
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 20 }}>⚡</span>
-              <span style={{ fontWeight: 600 }}>Shunya Chat</span>
-            </div>
-          }
-          placement="left"
-          closable
-          onClose={() => setLeftDrawerVisible(false)}
-          open={leftDrawerVisible}
-          width={280}
-          styles={{
-            body: { padding: 0, background: 'var(--color-sidebar)' },
-            header: { background: 'var(--color-sidebar)', borderBottom: '1px solid var(--color-border)' },
-          }}
-        >
-          <AppMenu collapsed={false} isTablet={true} />
-        </Drawer>
-      ) : (
-        <Sider
-          collapsible
-          collapsed={leftCollapsed}
-          onCollapse={setLeftCollapsed}
-          width={260}
-          collapsedWidth={72}
-          style={siderStyle}
-          trigger={null}
-        >
-          <AppMenu collapsed={leftCollapsed} isTablet={false} onCollapseToggle={() => setLeftCollapsed(!leftCollapsed)} />
-        </Sider>
-      )}
+    <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden', flexDirection: 'row' }}>
+      {/* New Consolidated Vertical Navigation */}
+      <VerticalNav />
 
       {/* Main Chat Area */}
       <Layout style={{
         background: 'var(--color-bg)',
-        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        // When right is expanded, collapse this area completely
-        flex: rightExpanded ? '0 0 0' : 1,
-        width: rightExpanded ? 0 : 'auto',
+        flex: 1,
         minWidth: 0,
         overflow: 'hidden',
-        opacity: rightExpanded ? 0 : 1,
-        pointerEvents: rightExpanded ? 'none' : 'auto',
       }}>
-        {/* Mobile Header */}
+        {/* Mobile Header - Repurposed for mobile navigation if needed */}
         {isTablet && (
           <div style={{
             padding: '12px 16px',
@@ -705,7 +572,7 @@ const ChatPage = () => {
             <Button
               type="text"
               icon={<MenuOutlined style={{ fontSize: 20 }} />}
-              onClick={() => setLeftDrawerVisible(true)}
+              onClick={() => setMobileNavVisible(true)}
             />
             <span style={{ fontWeight: 600, fontSize: 16 }}>Shunya Chat</span>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -713,11 +580,6 @@ const ChatPage = () => {
                 type="text"
                 icon={theme === 'dark' ? <SunOutlined /> : <MoonOutlined />}
                 onClick={toggleTheme}
-              />
-              <Button
-                type="text"
-                icon={<RobotOutlined style={{ fontSize: 20 }} />}
-                onClick={() => setRightDrawerVisible(true)}
               />
             </div>
           </div>
@@ -766,7 +628,7 @@ const ChatPage = () => {
               justifyContent: 'center',
               flex: 1,
               padding: '40px 20px',
-              overflowY: 'auto', // Allow scrolling if empty state content is too tall
+              overflowY: 'auto',
             }}>
               <div style={{
                 width: 80,
@@ -806,7 +668,6 @@ const ChatPage = () => {
                 width: '100%',
                 maxWidth: 420
               }}>
-                {/* View Demo Button - Primary Call to Action */}
                 <button
                   onClick={handleViewDemo}
                   style={{
@@ -899,7 +760,7 @@ const ChatPage = () => {
                 display: 'flex',
                 flexDirection: 'column',
                 scrollBehavior: 'smooth',
-                height: '0px', // Hack to force flex container to respect parent height
+                height: '0px',
                 minHeight: '0px',
               }}
             >
@@ -1057,25 +918,26 @@ const ChatPage = () => {
                     </Popover>
 
                     {/* Active Agents Pill */}
-                    <button
-                      onClick={() => !isTablet && setRightDrawerVisible(true)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '4px 10px',
-                        borderRadius: 16,
-                        border: activeAgents.length > 0 ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                        background: activeAgents.length > 0 ? 'var(--color-sidebar-active)' : 'transparent',
-                        color: activeAgents.length > 0 ? 'var(--color-primary)' : 'var(--color-text)',
-                        fontSize: 13,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      <RobotOutlined style={{ fontSize: 12 }} />
-                      <span>{activeAgents.length > 0 ? `${activeAgents.length} Agents` : 'Agents'}</span>
-                    </button>
+                    <Tooltip title="Manage Agents" placement="top">
+                      <button
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '4px 10px',
+                          borderRadius: 16,
+                          border: activeAgents.length > 0 ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                          background: activeAgents.length > 0 ? 'var(--color-sidebar-active)' : 'transparent',
+                          color: activeAgents.length > 0 ? 'var(--color-primary)' : 'var(--color-text)',
+                          fontSize: 13,
+                          cursor: 'default', // Managed through sidebar now
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <RobotOutlined style={{ fontSize: 12 }} />
+                        <span>{activeAgents.length > 0 ? `${activeAgents.length} Agents` : 'Agents'}</span>
+                      </button>
+                    </Tooltip>
 
                     {/* Model Selector */}
                     <Dropdown
@@ -1115,57 +977,35 @@ const ChatPage = () => {
         </Content>
       </Layout >
 
-      {/* Right Sidebar - Agent Marketplace */}
-      {
-        isTablet ? (
-          <Drawer
-            title="Agents"
-            placement="right"
-            closable
-            onClose={() => setRightDrawerVisible(false)}
-            open={rightDrawerVisible}
-            styles={{
-              wrapper: { width: 280 },
-              body: { padding: 0, background: 'var(--color-sidebar)' },
-              header: { background: 'var(--color-sidebar)', borderBottom: '1px solid var(--color-border)' },
-            }}
+      {/* Mobile Sidebar - Replaced with a simple Drawer using functional panels if needed */}
+      <Drawer
+        title="Menu"
+        placement="left"
+        closable
+        onClose={() => setMobileNavVisible(false)}
+        open={mobileNavVisible}
+        width={280}
+        styles={{
+          body: { padding: 0, background: 'var(--color-sidebar)' },
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {/* Minimal mobile menu */}
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => { handleNewChat(); setMobileNavVisible(false); }}
+            style={{ margin: 16 }}
           >
-            <RightSidebar isTablet={true} />
-          </Drawer>
-        ) : rightExpanded ? (
-          <div style={{
-            ...rightSiderStyle,
-            flex: 1,
-            width: 'auto',
-            minWidth: 0,
-            transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}>
-            <RightSidebar
-              isTablet={false}
-              expanded={rightExpanded}
-              onToggleExpand={() => setRightExpanded(!rightExpanded)}
-            />
+            New Chat
+          </Button>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <SpacesPanel />
+            <Divider />
+            <AgentsPanel />
           </div>
-        ) : (
-          <Sider
-            width={280}
-            style={{
-              ...rightSiderStyle,
-              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
-            trigger={null}
-          >
-            <RightSidebar
-              isTablet={false}
-              expanded={rightExpanded}
-              onToggleExpand={() => setRightExpanded(!rightExpanded)}
-            />
-          </Sider>
-        )
-      }
+        </div>
+      </Drawer>
     </Layout >
   );
 };
