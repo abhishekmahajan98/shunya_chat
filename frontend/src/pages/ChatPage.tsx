@@ -307,70 +307,12 @@ const ChatPage = () => {
               <p style={{
                 fontSize: 16,
                 color: 'var(--color-text-secondary)',
-                marginBottom: 40,
+                marginBottom: 0,
                 textAlign: 'center',
                 maxWidth: 400,
               }}>
                 Start a conversation. Your history is saved in the sidebar.
               </p>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12,
-                justifyContent: 'center',
-                width: '100%',
-                maxWidth: 420
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  margin: '8px 0',
-                  color: 'var(--color-text-tertiary)',
-                  fontSize: 12,
-                  fontWeight: 500,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.5
-                }}>
-                  <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }}></div>
-                  <span>Try an example</span>
-                  <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }}></div>
-                </div>
-
-                {['🔍 Explain quantum computing simply', '📊 Summarize this idea for a deck', '📧 Draft a short follow-up email', '💻 Debug a Python loop'].map((action, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setInputValue(action.split(' ').slice(1).join(' '))}
-                    style={{
-                      padding: '12px 16px',
-                      borderRadius: 12,
-                      border: '1px solid var(--color-border)',
-                      background: 'var(--color-surface)',
-                      color: 'var(--color-text)',
-                      fontSize: 14,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      textAlign: 'left',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--color-primary)';
-                      e.currentTarget.style.color = 'var(--color-primary)';
-                      e.currentTarget.style.background = 'var(--color-surface-hover)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--color-border)';
-                      e.currentTarget.style.color = 'var(--color-text)';
-                      e.currentTarget.style.background = 'var(--color-surface)';
-                    }}
-                  >
-                    <span style={{ fontSize: 16 }}>{action.split(' ')[0]}</span>
-                    <span>{action.split(' ').slice(1).join(' ')}</span>
-                  </button>
-                ))}
-              </div>
             </div>
           ) : (
             <div
