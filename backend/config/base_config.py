@@ -21,7 +21,7 @@ class BaseConfig(BaseSettings):
     GOOGLE_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
-    MODEL: str = "anthropic:claude-sonnet-4-5-20250929"
+    MODEL: str = "google_genai:gemini-3.5-flash"
     MODEL_BASE_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

@@ -16,16 +16,16 @@ class ModelRegistry:
 
     AVAILABLE_MODELS: list[ModelInfo] = [
         ModelInfo(
-            id="google_genai:gemini-2.0-flash",
-            name="Gemini 2.0 Flash",
+            id="google_genai:gemini-3.5-flash",
+            name="Gemini 3.5 Flash",
             provider="google",
-            description="Fast Google model",
+            description="Default — fast agentic Gemini",
         ),
         ModelInfo(
-            id="google_genai:gemini-2.5-pro",
-            name="Gemini 2.5 Pro",
+            id="google_genai:gemini-3-flash-preview",
+            name="Gemini 3 Flash (preview)",
             provider="google",
-            description="Stronger Google model",
+            description="Previous Gemini 3 Flash preview",
         ),
         ModelInfo(
             id="anthropic:claude-sonnet-4-5-20250929",
