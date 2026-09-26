@@ -1,13 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
-/**
- * Get auth headers for API requests
- */
-function getAuthHeaders(): Record<string, string> {
-    const token = localStorage.getItem('auth_token');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-}
-
 export interface ModelInfo {
     id: string;
     name: string;
@@ -50,61 +42,39 @@ export interface StreamChunk {
     message_id?: string;
 }
 
-/**
- * Get available models from the backend.
- */
 export async function getModels(): Promise<ModelInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/models`, {
-        headers: getAuthHeaders(),
-    });
+    const response = await fetch(`${API_BASE_URL}/api/models`);
     if (!response.ok) {
         throw new Error('Failed to fetch models');
     }
     return response.json();
 }
 
-/**
- * Get list of conversations with pagination.
- */
 export async function getConversations(limit: number = 20, offset: number = 0): Promise<ConversationSummary[]> {
-    const response = await fetch(`${API_BASE_URL}/api/conversations?limit=${limit}&offset=${offset}`, {
-        headers: getAuthHeaders(),
-    });
+    const response = await fetch(`${API_BASE_URL}/api/conversations?limit=${limit}&offset=${offset}`);
     if (!response.ok) {
         throw new Error('Failed to fetch conversations');
     }
     return response.json();
 }
 
-/**
- * Get a conversation with all messages.
- */
 export async function getConversation(conversationId: string): Promise<ConversationDetail> {
-    const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
-        headers: getAuthHeaders(),
-    });
+    const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`);
     if (!response.ok) {
         throw new Error('Failed to fetch conversation');
     }
     return response.json();
 }
 
-/**
- * Delete a conversation.
- */
 export async function deleteConversation(conversationId: string): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(),
     });
     if (!response.ok) {
         throw new Error('Failed to delete conversation');
     }
 }
 
-/**
- * Stream a message response from the chat API.
- */
 export async function streamMessage(
     model: string,
     content: string,
@@ -116,7 +86,6 @@ export async function streamMessage(
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            ...getAuthHeaders(),
         },
         body: JSON.stringify({
             model,
@@ -166,7 +135,6 @@ export async function uploadFile(file: File): Promise<{ url: string; path: strin
 
     const response = await fetch(`${API_BASE_URL}/api/upload`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: formData,
     });
 

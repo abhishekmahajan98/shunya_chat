@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { getConversations, getConversation, type ConversationSummary } from '../api';
-import { useAuth } from './AuthContext';
 
 export interface Citation {
     id: string;
@@ -70,8 +69,6 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-    const { isAuthenticated } = useAuth();
-
     const [messages, setMessages] = useState<Message[]>([]);
     const [conversationId, setConversationId] = useState<string | null>(null);
 
@@ -98,10 +95,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
 
     useEffect(() => {
-        if (isAuthenticated) {
-            refreshAllData();
-        }
-    }, [isAuthenticated]);
+        refreshAllData();
+    }, []);
 
     const addMessage = (message: Omit<Message, 'id' | 'timestamp'>) => {
         const id = crypto.randomUUID();

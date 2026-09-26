@@ -1,44 +1,23 @@
 """
 Chat router: models list, in-memory conversation history, and a dummy stream endpoint.
 
-No SQL schema / Supabase tables. Persistence is intentionally ephemeral so the
-data model can be redesigned from scratch.
+No auth, no SQL schema. Everything is ephemeral so concepts can be redesigned.
 """
 import asyncio
 import json
 import uuid
 from datetime import datetime
-from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from config import AVAILABLE_MODELS, ModelInfo, get_model_info
-from database import get_supabase
 from models import MessageCreate, ConversationSummary, ConversationDetail
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 # Ephemeral store: { conversation_id: { meta..., messages: [...] } }
 _STORE: dict[str, dict] = {}
-
-
-def get_optional_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    """Get user ID from auth token if provided."""
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-
-    token = authorization.replace("Bearer ", "")
-    supabase = get_supabase()
-
-    try:
-        user_response = supabase.auth.get_user(token)
-        if user_response and user_response.user:
-            return user_response.user.id
-    except Exception:
-        pass
-
-    return None
 
 
 def _now() -> str:
@@ -57,17 +36,10 @@ def _dummy_reply(content: str, model: str) -> str:
     if len(preview) > 280:
         preview = preview[:280] + "…"
     return (
-        f"**(Stub response)** No DB schema yet — history is in-memory only.\n\n"
+        f"**(Stub response)** No auth or DB yet — history is in-memory only.\n\n"
         f"You said:\n\n> {preview or '*(empty message)*'}\n\n"
         f"_Model selected: `{model}`._"
     )
-
-
-def _owned(conversation: dict, user_id: Optional[str]) -> bool:
-    if not user_id:
-        return True
-    owner = conversation.get("user_id")
-    return owner is None or owner == user_id
 
 
 @router.get("/models", response_model=list[ModelInfo])
@@ -77,11 +49,8 @@ async def list_models():
 
 
 @router.post("/upload")
-async def upload_file(file: UploadFile, user_id: Optional[str] = Depends(get_optional_user_id)):
-    """
-    Stub upload — returns a placeholder URL without writing to storage.
-    Replace when the new document/attachment model exists.
-    """
+async def upload_file(file: UploadFile):
+    """Stub upload — placeholder URL, no storage backend."""
     content = await file.read()
     file_id = str(uuid.uuid4())
     return {
@@ -94,17 +63,10 @@ async def upload_file(file: UploadFile, user_id: Optional[str] = Depends(get_opt
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
-async def list_conversations(
-    skip: int = 0,
-    limit: int = 20,
-    offset: Optional[int] = None,
-    user_id: Optional[str] = Depends(get_optional_user_id),
-):
+async def list_conversations(skip: int = 0, limit: int = 20, offset: int | None = None):
     """List in-memory conversations (newest first)."""
     start = offset if offset is not None else skip
     items = list(_STORE.values())
-    if user_id:
-        items = [c for c in items if c.get("user_id") == user_id]
     items.sort(key=lambda c: c.get("updated_at", ""), reverse=True)
     page = items[start : start + limit]
     return [
@@ -120,16 +82,11 @@ async def list_conversations(
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
-async def get_conversation(
-    conversation_id: str,
-    user_id: Optional[str] = Depends(get_optional_user_id),
-):
+async def get_conversation(conversation_id: str):
     """Get an in-memory conversation with messages."""
     conversation = _STORE.get(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    if not _owned(conversation, user_id):
-        raise HTTPException(status_code=403, detail="Not authorized")
 
     return {
         "id": conversation["id"],
@@ -142,30 +99,17 @@ async def get_conversation(
 
 
 @router.delete("/conversations/{conversation_id}")
-async def delete_conversation(
-    conversation_id: str,
-    user_id: Optional[str] = Depends(get_optional_user_id),
-):
+async def delete_conversation(conversation_id: str):
     """Delete an in-memory conversation."""
-    conversation = _STORE.get(conversation_id)
-    if not conversation:
+    if conversation_id not in _STORE:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    if not _owned(conversation, user_id):
-        raise HTTPException(status_code=403, detail="Not authorized")
-
     del _STORE[conversation_id]
     return {"status": "deleted"}
 
 
 @router.post("/chat/stream")
-async def send_message_stream(
-    request: MessageCreate,
-    user_id: Optional[str] = Depends(get_optional_user_id),
-):
-    """
-    Dummy streaming chat endpoint.
-    Stores user + assistant messages in process memory and streams a stub reply.
-    """
+async def send_message_stream(request: MessageCreate):
+    """Dummy streaming chat endpoint with in-memory persistence."""
     if not get_model_info(request.model):
         raise HTTPException(status_code=400, detail=f"Unknown model: {request.model}")
 
@@ -175,8 +119,6 @@ async def send_message_stream(
         conversation = _STORE.get(request.conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
-        if not _owned(conversation, user_id):
-            raise HTTPException(status_code=403, detail="Not authorized")
         conversation["updated_at"] = now
         conversation["model"] = request.model
     else:
@@ -185,7 +127,6 @@ async def send_message_stream(
             "id": conversation_id,
             "title": _title_from_content(request.content),
             "model": request.model,
-            "user_id": user_id,
             "created_at": now,
             "updated_at": now,
             "messages": [],

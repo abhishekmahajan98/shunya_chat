@@ -1,58 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoadingSplash } from './components/LoadingSplash';
 import ChatPage from './pages/ChatPage';
-import LoginPage from './pages/LoginPage';
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return null;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <>{children}</>;
-}
-
-function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return null;
-  }
-
-  if (isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
-
-  return <>{children}</>;
-}
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={
-        <PublicRoute>
-          <LoginPage />
-        </PublicRoute>
-      } />
-      <Route path="/" element={
-        <ProtectedRoute>
-          <ChatPage />
-        </ProtectedRoute>
-      } />
+      <Route path="/" element={<ChatPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
 
-function AppContent() {
-  const { isLoading } = useAuth();
+function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -63,19 +23,11 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (isLoading || showSplash) {
+  if (showSplash) {
     return <LoadingSplash />;
   }
 
   return <AppRoutes />;
-}
-
-function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
 }
 
 export default App;

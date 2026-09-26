@@ -1,16 +1,13 @@
 import { useState, useRef } from 'react';
-import { Tooltip, Divider, Dropdown } from 'antd';
+import { Tooltip, Divider } from 'antd';
 import {
     PlusOutlined,
     MessageOutlined,
     SunOutlined,
     MoonOutlined,
-    UserOutlined,
-    LogoutOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { HistoryPanel } from './HistoryPanel';
 
@@ -56,7 +53,6 @@ const NavItem = ({
 
 export const VerticalNav = () => {
     const navigate = useNavigate();
-    const { user, logout } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const { clearMessages, setConversationId } = useChat();
     const [activePanel, setActivePanel] = useState<PanelType>(null);
@@ -131,38 +127,6 @@ export const VerticalNav = () => {
                         label={theme === 'dark' ? "Light Mode" : "Dark Mode"}
                         onClick={toggleTheme}
                     />
-
-                    {user && (
-                        <Dropdown
-                            menu={{
-                                items: [
-                                    { label: user.email, key: 'email', icon: <UserOutlined />, disabled: true },
-                                    { type: 'divider' },
-                                    { label: 'Logout', key: 'logout', icon: <LogoutOutlined />, onClick: logout }
-                                ]
-                            }}
-                            placement="topRight"
-                            trigger={['click']}
-                        >
-                            <div style={{ cursor: 'pointer', paddingBottom: 8 }}>
-                                <div style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: '50%',
-                                    background: 'linear-gradient(135deg, var(--color-primary) 0%, #D99A20 100%)',
-                                    color: '#1A1A1A',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontWeight: 700,
-                                    fontSize: 14,
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                                }}>
-                                    {user.email?.[0].toUpperCase()}
-                                </div>
-                            </div>
-                        </Dropdown>
-                    )}
                 </div>
             </div>
 
