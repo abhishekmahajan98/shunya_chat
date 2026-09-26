@@ -12,9 +12,10 @@ import {
   CloseOutlined,
   ClockCircleOutlined,
   PlusOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat, type Attachment } from '../context/ChatContext';
+import { useChat, type Attachment, type ReasoningStep } from '../context/ChatContext';
 import { VerticalNav } from '../components/VerticalNav';
 import { HistoryPanel } from '../components/HistoryPanel';
 import MessageRenderer from '../components/MessageRenderer';
@@ -34,6 +35,9 @@ const ChatPage = () => {
     conversationId,
     setConversationId,
     clearMessages,
+    assistants,
+    selectedAssistantId,
+    setSelectedAssistantId,
   } = useChat();
 
   const [inputValue, setInputValue] = useState('');
@@ -142,8 +146,17 @@ const ChatPage = () => {
       pending: true,
     });
 
-    let thinkingContent = '';
     let textContent = '';
+    const steps: ReasoningStep[] = [];
+
+    const pushSteps = (expanded = true) => {
+      updateMessage(assistantMsgId, {
+        pending: false,
+        type: steps.length ? 'reasoning' : 'sync',
+        content: textContent,
+        reasoning: steps.length ? { steps: [...steps], isExpanded: expanded } : undefined,
+      });
+    };
 
     if (!selectedModel) {
       setIsLoading(false);
@@ -155,47 +168,50 @@ const ChatPage = () => {
         selectedModel.id,
         userInput,
         (chunk: StreamChunk) => {
-          if (chunk.type === 'meta' && chunk.conversation_id) {
-            setConversationId(chunk.conversation_id);
-          } else if (chunk.type === 'thinking') {
-            thinkingContent += chunk.content || '';
-            updateMessage(assistantMsgId, {
-              pending: false,
-              type: 'reasoning',
-              reasoning: {
-                steps: [{ id: 'thinking', text: thinkingContent, status: 'running' }],
-                isExpanded: true
-              },
+          if (chunk.type === 'meta' && (chunk.conversation_id || chunk.thread_id)) {
+            setConversationId(chunk.conversation_id || chunk.thread_id || null);
+          } else if (chunk.type === 'status') {
+            const idx = steps.findIndex(s => s.id === 'status');
+            const step = { id: 'status', text: chunk.content || 'Working…', status: 'running' as const };
+            if (idx >= 0) steps[idx] = step;
+            else steps.unshift(step);
+            pushSteps(true);
+          } else if (chunk.type === 'tool_start') {
+            steps.push({
+              id: `tool-${chunk.tool_run_id}`,
+              text: `Using ${chunk.tool_name || chunk.name || 'tool'}${chunk.input ? `: ${chunk.input}` : ''}`,
+              status: 'running',
             });
+            pushSteps(true);
+          } else if (chunk.type === 'tool_end') {
+            const idx = steps.findIndex(s => s.id === `tool-${chunk.tool_run_id}`);
+            if (idx >= 0) {
+              const base = steps[idx].text;
+              steps[idx] = {
+                ...steps[idx],
+                status: 'complete',
+                text: chunk.output ? `${base}\n→ ${chunk.output}` : base,
+              };
+            }
+            pushSteps(true);
           } else if (chunk.type === 'text') {
             textContent += chunk.content || '';
-            updateMessage(assistantMsgId, {
-              pending: false,
-              content: textContent,
-              reasoning: thinkingContent ? {
-                steps: [{ id: 'thinking', text: thinkingContent, status: 'complete' as const }],
-                isExpanded: false
-              } : undefined,
-            });
+            const statusIdx = steps.findIndex(s => s.id === 'status');
+            if (statusIdx >= 0) steps[statusIdx] = { ...steps[statusIdx], status: 'complete' };
+            pushSteps(false);
           } else if (chunk.type === 'done') {
-            updateMessage(assistantMsgId, {
-              pending: false,
-              type: thinkingContent ? 'reasoning' : 'sync',
-              content: textContent,
-              reasoning: thinkingContent ? {
-                steps: [{ id: 'thinking', text: thinkingContent, status: 'complete' as const }],
-                isExpanded: false
-              } : undefined,
-            });
+            pushSteps(false);
           } else if (chunk.type === 'error') {
             updateMessage(assistantMsgId, {
               type: 'sync',
-              content: `Error: ${chunk.content}`,
+              pending: false,
+              content: textContent || `Error: ${chunk.content}`,
             });
           }
         },
         conversationId || undefined,
         currentAttachments.length > 0 ? currentAttachments : undefined,
+        selectedAssistantId || undefined,
       );
     } catch (error) {
       console.error('Failed to stream message:', error);
@@ -230,6 +246,23 @@ const ChatPage = () => {
       </div>
     ),
   }));
+
+  const selectedAssistant = assistants.find(a => a.id === selectedAssistantId) || null;
+  const assistantMenuItems: MenuProps['items'] = assistants.map((a) => ({
+    key: a.id,
+    label: (
+      <div style={{ padding: '4px 0' }}>
+        <div style={{ fontWeight: 500 }}>{a.name}</div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{a.graph_id}</div>
+      </div>
+    ),
+  }));
+  const handleAssistantClick: MenuProps['onClick'] = (e) => {
+    setSelectedAssistantId(e.key);
+    // New assistant ⇒ new thread
+    clearMessages();
+    setConversationId(null);
+  };
 
   return (
     <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden', flexDirection: 'row' }}>
@@ -437,6 +470,24 @@ const ChatPage = () => {
                       onClick={() => fileInputRef.current?.click()}
                       loading={isUploading}
                     />
+
+                    <Dropdown
+                      menu={{ items: assistantMenuItems, onClick: handleAssistantClick }}
+                      trigger={['click']}
+                    >
+                      <Button
+                        type="text"
+                        icon={<RobotOutlined />}
+                        style={{
+                          color: 'var(--color-text-secondary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        <span style={{ fontSize: 13 }}>{selectedAssistant?.name || 'Assistant'}</span>
+                      </Button>
+                    </Dropdown>
 
                     <Dropdown
                       menu={{ items: menuItems, onClick: handleMenuClick }}

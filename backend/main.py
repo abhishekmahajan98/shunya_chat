@@ -1,15 +1,17 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-from config import settings
 
+from config import settings
+from routers.assistants import router as assistants_router
 from routers.chat import router as chat_router
 
 app = FastAPI(
     title="Shunya Chat API",
-    description="Minimal stub backend: in-memory chat/history (no auth, no schema)",
-    version="0.3.0",
+    description="LangChain agent harness (basic + deep) with Supabase-ready persistence",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -21,11 +23,16 @@ app.add_middleware(
 )
 
 app.include_router(chat_router)
+app.include_router(assistants_router)
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "store": "supabase" if settings.SUPABASE_URL and settings.SUPABASE_KEY else "memory",
+        "auth": "dummy",
+    }
 
 
 frontend_dist = Path(__file__).parent / "static"

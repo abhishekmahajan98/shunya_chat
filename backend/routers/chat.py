@@ -1,56 +1,34 @@
-"""
-Chat router: models list, in-memory conversation history, and a dummy stream endpoint.
+"""Chat + thread history + models for the Shunya agent harness."""
 
-No auth, no SQL schema. Everything is ephemeral so concepts can be redesigned.
-"""
-import asyncio
-import json
+from __future__ import annotations
+
 import uuid
-from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from config import AVAILABLE_MODELS, ModelInfo, get_model_info
-from models import MessageCreate, ConversationSummary, ConversationDetail
+from auth import DummyUser, get_current_user
+from config import AVAILABLE_MODELS, ModelInfo, get_model_info, settings
+from db import get_store
+from models import ConversationDetail, ConversationSummary, MessageCreate, MessageOut
+from services.agent_runner import stream_chat
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
-# Ephemeral store: { conversation_id: { meta..., messages: [...] } }
-_STORE: dict[str, dict] = {}
 
-
-def _now() -> str:
-    return datetime.utcnow().isoformat()
-
-
-def _title_from_content(content: str) -> str:
-    text = (content or "").strip().replace("\n", " ")
-    if not text:
-        return "New Chat"
-    return text[:48] + ("…" if len(text) > 48 else "")
-
-
-def _dummy_reply(content: str, model: str) -> str:
-    preview = (content or "").strip()
-    if len(preview) > 280:
-        preview = preview[:280] + "…"
-    return (
-        f"**(Stub response)** No auth or DB yet — history is in-memory only.\n\n"
-        f"You said:\n\n> {preview or '*(empty message)*'}\n\n"
-        f"_Model selected: `{model}`._"
-    )
+@router.get("/me")
+async def me(user: DummyUser = Depends(get_current_user)):
+    return {"id": user.id, "email": user.email, "name": user.name}
 
 
 @router.get("/models", response_model=list[ModelInfo])
 async def list_models():
-    """Get available models."""
     return AVAILABLE_MODELS
 
 
 @router.post("/upload")
-async def upload_file(file: UploadFile):
-    """Stub upload — placeholder URL, no storage backend."""
+async def upload_file(file: UploadFile, user: DummyUser = Depends(get_current_user)):
     content = await file.read()
     file_id = str(uuid.uuid4())
     return {
@@ -63,109 +41,86 @@ async def upload_file(file: UploadFile):
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
-async def list_conversations(skip: int = 0, limit: int = 20, offset: int | None = None):
-    """List in-memory conversations (newest first)."""
+@router.get("/threads", response_model=list[ConversationSummary])
+async def list_threads(
+    skip: int = 0,
+    limit: int = 20,
+    offset: Optional[int] = None,
+    assistant_id: Optional[str] = None,
+    user: DummyUser = Depends(get_current_user),
+):
+    store = get_store()
+    store.ensure_default_assistants(user.id)
     start = offset if offset is not None else skip
-    items = list(_STORE.values())
-    items.sort(key=lambda c: c.get("updated_at", ""), reverse=True)
-    page = items[start : start + limit]
+    threads = store.list_threads(user.id, assistant_id=assistant_id, limit=limit, offset=start)
     return [
         {
-            "id": c["id"],
-            "title": c["title"],
-            "model": c["model"],
-            "created_at": c["created_at"],
-            "updated_at": c["updated_at"],
+            "id": t["id"],
+            "title": t.get("title") or "New Chat",
+            "model": (t.get("metadata") or {}).get("thread_model") or settings.MODEL,
+            "created_at": t["created_at"],
+            "updated_at": t["updated_at"],
+            "assistant_id": t.get("assistant_id"),
         }
-        for c in page
+        for t in threads
     ]
 
 
-@router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
-async def get_conversation(conversation_id: str):
-    """Get an in-memory conversation with messages."""
-    conversation = _STORE.get(conversation_id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+@router.get("/conversations/{thread_id}", response_model=ConversationDetail)
+@router.get("/threads/{thread_id}", response_model=ConversationDetail)
+async def get_thread(thread_id: str, user: DummyUser = Depends(get_current_user)):
+    store = get_store()
+    thread = store.get_thread(thread_id, user.id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
 
+    messages = store.list_messages(thread_id)
+    # UI currently expects user/assistant; hide raw tool rows from the transcript
+    visible = [m for m in messages if m["role"] in ("user", "assistant")]
     return {
-        "id": conversation["id"],
-        "title": conversation["title"],
-        "model": conversation["model"],
-        "created_at": conversation["created_at"],
-        "updated_at": conversation["updated_at"],
-        "messages": conversation["messages"],
+        "id": thread["id"],
+        "title": thread.get("title") or "New Chat",
+        "model": (thread.get("metadata") or {}).get("thread_model") or settings.MODEL,
+        "created_at": thread["created_at"],
+        "updated_at": thread["updated_at"],
+        "assistant_id": thread.get("assistant_id"),
+        "messages": [
+            MessageOut(
+                id=m["id"],
+                role=m["role"],
+                content=m.get("content") or "",
+                created_at=m["created_at"],
+                additional_kwargs=m.get("additional_kwargs"),
+                tool_calls=m.get("tool_calls"),
+            )
+            for m in visible
+        ],
     }
 
 
-@router.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
-    """Delete an in-memory conversation."""
-    if conversation_id not in _STORE:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    del _STORE[conversation_id]
+@router.delete("/conversations/{thread_id}")
+@router.delete("/threads/{thread_id}")
+async def delete_thread(thread_id: str, user: DummyUser = Depends(get_current_user)):
+    store = get_store()
+    if not store.delete_thread(thread_id, user.id):
+        raise HTTPException(status_code=404, detail="Thread not found")
     return {"status": "deleted"}
 
 
 @router.post("/chat/stream")
-async def send_message_stream(request: MessageCreate):
-    """Dummy streaming chat endpoint with in-memory persistence."""
+async def chat_stream(request: MessageCreate, user: DummyUser = Depends(get_current_user)):
     if not get_model_info(request.model):
-        raise HTTPException(status_code=400, detail=f"Unknown model: {request.model}")
+        # Allow any model string (provider:model) even if not in the catalogue
+        if ":" not in request.model and "/" not in request.model:
+            raise HTTPException(status_code=400, detail=f"Unknown model: {request.model}")
 
-    now = _now()
-
-    if request.conversation_id:
-        conversation = _STORE.get(request.conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        conversation["updated_at"] = now
-        conversation["model"] = request.model
-    else:
-        conversation_id = str(uuid.uuid4())
-        conversation = {
-            "id": conversation_id,
-            "title": _title_from_content(request.content),
-            "model": request.model,
-            "created_at": now,
-            "updated_at": now,
-            "messages": [],
-        }
-        _STORE[conversation_id] = conversation
-
-    user_message = {
-        "id": str(uuid.uuid4()),
-        "conversation_id": conversation["id"],
-        "role": "user",
-        "content": request.content,
-        "created_at": now,
-        "attachments": [a.model_dump() for a in request.attachments] if request.attachments else [],
-    }
-    conversation["messages"].append(user_message)
-
-    reply_text = _dummy_reply(request.content, request.model)
-    assistant_message_id = str(uuid.uuid4())
-
-    async def event_stream():
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation['id']})}\n\n"
-        await asyncio.sleep(0.05)
-
-        chunk_size = 24
-        for i in range(0, len(reply_text), chunk_size):
-            piece = reply_text[i : i + chunk_size]
-            yield f"data: {json.dumps({'type': 'text', 'content': piece})}\n\n"
-            await asyncio.sleep(0.02)
-
-        assistant_message = {
-            "id": assistant_message_id,
-            "conversation_id": conversation["id"],
-            "role": "assistant",
-            "content": reply_text,
-            "created_at": _now(),
-        }
-        conversation["messages"].append(assistant_message)
-        conversation["updated_at"] = _now()
-
-        yield f"data: {json.dumps({'type': 'done', 'conversation_id': conversation['id'], 'message_id': assistant_message_id})}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    thread_id = request.thread_id or request.conversation_id
+    generator = stream_chat(
+        user_id=user.id,
+        content=request.content,
+        model=request.model,
+        assistant_id=request.assistant_id,
+        thread_id=thread_id,
+        model_base_url=request.model_base_url,
+    )
+    return StreamingResponse(generator, media_type="text/event-stream")

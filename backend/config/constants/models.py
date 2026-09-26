@@ -1,46 +1,48 @@
+from typing import Literal, Optional
+
 from pydantic import BaseModel
-from typing import Optional, Literal
+
 
 class ModelInfo(BaseModel):
     """Information about an available model."""
-    id: str
+    id: str  # provider:model for init_chat_model
     name: str
-    provider: Literal["google", "anthropic"]
+    provider: Literal["google", "anthropic", "openai"]
     description: str
 
+
 class ModelRegistry:
-    """Registry of all permissible user-facing AI models."""
-    
+    """Registry of user-facing AI models."""
+
     AVAILABLE_MODELS: list[ModelInfo] = [
         ModelInfo(
-            id="gemini-3-flash-preview",
-            name="Gemini 3 Flash",
+            id="google_genai:gemini-2.0-flash",
+            name="Gemini 2.0 Flash",
             provider="google",
-            description="Fast with thinking"
+            description="Fast Google model",
         ),
         ModelInfo(
-            id="gemini-3-pro-preview",
-            name="Gemini 3 Pro",
+            id="google_genai:gemini-2.5-pro",
+            name="Gemini 2.5 Pro",
             provider="google",
-            description="Deep reasoning"
+            description="Stronger Google model",
         ),
         ModelInfo(
-            id="claude-sonnet-4-5-20250929",
+            id="anthropic:claude-sonnet-4-5-20250929",
             name="Claude Sonnet 4.5",
             provider="anthropic",
-            description="Balanced performance"
+            description="Balanced Anthropic model",
         ),
         ModelInfo(
-            id="claude-sonnet-4-5-20250929-thinking",
-            name="Claude Sonnet 4.5 Thinking",
-            provider="anthropic",
-            description="Extended reasoning"
+            id="openai:gpt-4o",
+            name="GPT-4o",
+            provider="openai",
+            description="OpenAI flagship",
         ),
     ]
 
     @classmethod
     def get_model_info(cls, model_id: str) -> Optional[ModelInfo]:
-        """Get model info by ID from the registry."""
         for model in cls.AVAILABLE_MODELS:
             if model.id == model_id:
                 return model
@@ -48,5 +50,4 @@ class ModelRegistry:
 
     @classmethod
     def get_all_models(cls) -> list[ModelInfo]:
-        """Get all registered models."""
         return cls.AVAILABLE_MODELS

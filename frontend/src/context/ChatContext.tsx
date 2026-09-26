@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getConversations, getConversation, type ConversationSummary } from '../api';
+import { getConversations, getConversation, getAssistants, type ConversationSummary, type Assistant } from '../api';
 
 export interface Citation {
     id: string;
@@ -53,6 +53,10 @@ interface ChatContextType {
     conversationId: string | null;
     setConversationId: (id: string | null) => void;
 
+    assistants: Assistant[];
+    selectedAssistantId: string | null;
+    setSelectedAssistantId: (id: string | null) => void;
+
     conversations: ConversationSummary[];
     isLoadingHistory: boolean;
     hasMoreHistory: boolean;
@@ -64,13 +68,11 @@ interface ChatContextType {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-interface ChatProviderProps {
-    children: ReactNode;
-}
-
-export function ChatProvider({ children }: ChatProviderProps) {
+export function ChatProvider({ children }: { children: ReactNode }) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [conversationId, setConversationId] = useState<string | null>(null);
+    const [assistants, setAssistants] = useState<Assistant[]>([]);
+    const [selectedAssistantId, setSelectedAssistantId] = useState<string | null>(null);
 
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -80,7 +82,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const refreshHistory = async () => {
         setIsLoadingHistory(true);
         try {
-            const data = await getConversations(HISTORY_PAGE_SIZE, 0);
+            const data = await getConversations(HISTORY_PAGE_SIZE, 0, selectedAssistantId || undefined);
             setConversations(data);
             setHasMoreHistory(data.length === HISTORY_PAGE_SIZE);
         } catch (error) {
@@ -91,6 +93,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
 
     const refreshAllData = async () => {
+        try {
+            const list = await getAssistants();
+            setAssistants(list);
+            if (!selectedAssistantId && list.length > 0) {
+                setSelectedAssistantId(list[0].id);
+            }
+        } catch (error) {
+            console.error('Failed to load assistants:', error);
+        }
         await refreshHistory();
     };
 
@@ -98,25 +109,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
         refreshAllData();
     }, []);
 
+    useEffect(() => {
+        refreshHistory();
+    }, [selectedAssistantId]);
+
     const addMessage = (message: Omit<Message, 'id' | 'timestamp'>) => {
         const id = crypto.randomUUID();
-        const newMessage: Message = {
-            ...message,
-            id,
-            timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, newMessage]);
+        setMessages((prev) => [...prev, { ...message, id, timestamp: new Date() }]);
         return id;
     };
 
     const updateMessage = (id: string, updates: Partial<Message> | ((prev: Message) => Partial<Message>)) => {
         setMessages((prev) =>
             prev.map((msg) => {
-                if (msg.id === id) {
-                    const actualUpdates = typeof updates === 'function' ? updates(msg) : updates;
-                    return { ...msg, ...actualUpdates };
-                }
-                return msg;
+                if (msg.id !== id) return msg;
+                const actualUpdates = typeof updates === 'function' ? updates(msg) : updates;
+                return { ...msg, ...actualUpdates };
             })
         );
     };
@@ -125,7 +133,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (isLoadingHistory || !hasMoreHistory) return;
         setIsLoadingHistory(true);
         try {
-            const data = await getConversations(HISTORY_PAGE_SIZE, conversations.length);
+            const data = await getConversations(HISTORY_PAGE_SIZE, conversations.length, selectedAssistantId || undefined);
             setConversations(prev => [...prev, ...data]);
             setHasMoreHistory(data.length === HISTORY_PAGE_SIZE);
         } catch (error) {
@@ -141,18 +149,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
         try {
             const data = await getConversation(id);
             setConversationId(data.id);
-            const uiMessages: Message[] = data.messages.map(msg => ({
-                id: msg.id,
-                type: msg.reasoning ? 'reasoning' : 'sync',
-                sender: msg.role === 'user' ? 'user' : 'assistant',
-                content: msg.content,
-                timestamp: new Date(msg.created_at),
-                attachments: msg.attachments as Attachment[] | undefined,
-                reasoning: msg.reasoning,
-                citations: msg.citations,
-                agents: msg.agents,
-            }));
-            setMessages(uiMessages);
+            if (data.assistant_id) setSelectedAssistantId(data.assistant_id);
+            setMessages(
+                data.messages
+                    .filter(m => m.role === 'user' || m.role === 'assistant')
+                    .map(msg => ({
+                        id: msg.id,
+                        type: 'sync' as const,
+                        sender: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+                        content: msg.content,
+                        timestamp: new Date(msg.created_at),
+                        attachments: msg.attachments as Attachment[] | undefined,
+                    }))
+            );
         } catch (error) {
             console.error('Failed to load conversation:', error);
         } finally {
@@ -161,9 +170,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
 
     useEffect(() => {
-        if (conversationId) {
-            refreshHistory();
-        }
+        if (conversationId) refreshHistory();
     }, [conversationId]);
 
     return (
@@ -178,6 +185,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 },
                 conversationId,
                 setConversationId,
+                assistants,
+                selectedAssistantId,
+                setSelectedAssistantId,
                 conversations,
                 isLoadingHistory,
                 hasMoreHistory,
@@ -194,8 +204,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
 export function useChat() {
     const context = useContext(ChatContext);
-    if (!context) {
-        throw new Error('useChat must be used within a ChatProvider');
-    }
+    if (!context) throw new Error('useChat must be used within a ChatProvider');
     return context;
 }
