@@ -1,5 +1,5 @@
 """
-Supabase database client configuration.
+Supabase client — used for Auth only (no app tables / SQL schema yet).
 """
 from supabase import create_client, Client
 from config import settings
@@ -7,10 +7,9 @@ from config import settings
 if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in config")
 
-# Create Supabase client
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 
 def get_supabase() -> Client:
-    """Get Supabase client instance."""
+    """Get Supabase client instance (Auth)."""
     return supabase

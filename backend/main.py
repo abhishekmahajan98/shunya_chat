@@ -9,7 +9,7 @@ from routers.auth import router as auth_router
 
 app = FastAPI(
     title="Shunya Chat API",
-    description="Minimal backend: auth, chat, and conversation history",
+    description="Minimal backend: Supabase auth + in-memory stub chat/history (no app schema)",
     version="0.2.0",
 )
 
