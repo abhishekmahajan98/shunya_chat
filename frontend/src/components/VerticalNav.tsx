@@ -3,8 +3,6 @@ import { Tooltip, Divider, Dropdown } from 'antd';
 import {
     PlusOutlined,
     MessageOutlined,
-    FolderOutlined,
-    RobotOutlined,
     SunOutlined,
     MoonOutlined,
     UserOutlined,
@@ -15,10 +13,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { HistoryPanel } from './HistoryPanel';
-import { SpacesPanel } from './SpacesPanel';
-import { AgentsPanel } from './AgentsPanel';
 
-type PanelType = 'history' | 'spaces' | 'agents' | null;
+type PanelType = 'history' | null;
 
 const NavItem = ({
     icon,
@@ -64,8 +60,7 @@ export const VerticalNav = () => {
     const { theme, toggleTheme } = useTheme();
     const { clearMessages, setConversationId } = useChat();
     const [activePanel, setActivePanel] = useState<PanelType>(null);
-    const [agentsExpanded, setAgentsExpanded] = useState(false);
-    const hoverTimeoutRef = useRef<any>(null);
+    const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const handleNewChat = () => {
         clearMessages();
@@ -89,7 +84,6 @@ export const VerticalNav = () => {
             style={{ position: 'relative', display: 'flex', height: '100%', zIndex: 100 }}
             onMouseLeave={handleMouseLeave}
         >
-            {/* Narrow Icon Bar */}
             <div style={{
                 width: 64,
                 height: '100%',
@@ -102,7 +96,6 @@ export const VerticalNav = () => {
                 gap: 12,
                 flexShrink: 0,
             }}>
-                {/* Logo */}
                 <div
                     onClick={() => navigate('/')}
                     style={{
@@ -117,7 +110,6 @@ export const VerticalNav = () => {
                     ⚡
                 </div>
 
-                {/* Primary Actions */}
                 <NavItem
                     icon={<PlusOutlined />}
                     label="New Chat"
@@ -126,7 +118,6 @@ export const VerticalNav = () => {
 
                 <Divider style={{ margin: '4px 0', opacity: 0.6 }} />
 
-                {/* Navigation Panels */}
                 <NavItem
                     icon={<MessageOutlined />}
                     label="History"
@@ -134,21 +125,6 @@ export const VerticalNav = () => {
                     onMouseEnter={() => handleMouseEnter('history')}
                 />
 
-                <NavItem
-                    icon={<FolderOutlined />}
-                    label="Spaces"
-                    active={activePanel === 'spaces'}
-                    onMouseEnter={() => handleMouseEnter('spaces')}
-                />
-
-                <NavItem
-                    icon={<RobotOutlined />}
-                    label="Agents"
-                    active={activePanel === 'agents'}
-                    onMouseEnter={() => handleMouseEnter('agents')}
-                />
-
-                {/* Bottom Actions */}
                 <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
                     <NavItem
                         icon={theme === 'dark' ? <SunOutlined /> : <MoonOutlined />}
@@ -190,7 +166,6 @@ export const VerticalNav = () => {
                 </div>
             </div>
 
-            {/* Expanding Side Panel Container */}
             <div
                 onMouseEnter={() => {
                     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
@@ -200,7 +175,7 @@ export const VerticalNav = () => {
                     left: 64,
                     top: 0,
                     bottom: 0,
-                    width: activePanel ? (activePanel === 'agents' && agentsExpanded ? 1100 : 320) : 0,
+                    width: activePanel ? 320 : 0,
                     height: '100%',
                     background: 'var(--color-bg)',
                     borderRight: activePanel ? '1px solid var(--color-border)' : 'none',
@@ -210,15 +185,8 @@ export const VerticalNav = () => {
                     boxShadow: activePanel ? '8px 0 24px rgba(0,0,0,0.1)' : 'none',
                 }}
             >
-                <div style={{ width: 1100, height: '100%' }}>
+                <div style={{ width: 320, height: '100%' }}>
                     {activePanel === 'history' && <HistoryPanel />}
-                    {activePanel === 'spaces' && <SpacesPanel />}
-                    {activePanel === 'agents' && (
-                        <AgentsPanel
-                            expanded={agentsExpanded}
-                            onToggleExpand={() => setAgentsExpanded(!agentsExpanded)}
-                        />
-                    )}
                 </div>
             </div>
         </div>

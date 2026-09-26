@@ -3,11 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoadingSplash } from './components/LoadingSplash';
 import ChatPage from './pages/ChatPage';
-import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
-import RegisterAgentPage from './pages/RegisterAgentPage';
 
-// Protected Route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -22,7 +19,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Public Route - redirect to home if already authenticated
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -50,16 +46,7 @@ function AppRoutes() {
           <ChatPage />
         </ProtectedRoute>
       } />
-      <Route path="/settings" element={
-        <ProtectedRoute>
-          <SettingsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/register-agent" element={
-        <ProtectedRoute>
-          <RegisterAgentPage />
-        </ProtectedRoute>
-      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
@@ -71,7 +58,7 @@ function AppContent() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2500); // 2.5s minimum splash
+    }, 2500);
 
     return () => clearTimeout(timer);
   }, []);
