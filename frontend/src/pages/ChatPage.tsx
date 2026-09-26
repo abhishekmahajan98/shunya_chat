@@ -119,62 +119,6 @@ const ChatPage = () => {
     }
   }, [messages, isLoading]);
 
-  const handleViewDemo = () => {
-    setIsLoading(true);
-
-    addMessage({ type: 'sync', sender: 'user', content: 'Show me what you can render!' });
-    addMessage({
-      type: 'sync',
-      sender: 'assistant',
-      content: `I'd love to! I support **bold**, *italic*, ~~strikethrough~~, and \`inline code\`.\n\n> **Blockquotes** are great for emphasizing key points.\n> They can even be nested!`
-    });
-
-    addMessage({ type: 'sync', sender: 'user', content: 'Can you handle code snippets?' });
-    addMessage({
-      type: 'sync',
-      sender: 'assistant',
-      content: `Absolutely. Here's some **Python** with syntax highlighting:\n\n\`\`\`python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nprint(fibonacci(10))\n\`\`\``
-    });
-
-    addMessage({ type: 'sync', sender: 'user', content: 'What about math equations?' });
-    addMessage({
-      type: 'sync',
-      sender: 'assistant',
-      content: `I speak $\\LaTeX$ fluently!\n\n**Inline:** The energy-mass equivalence is $E=mc^2$.\n\n**Block:**\n$$\nf(x) = \\int_{-\\infty}^{\\infty} \\hat f(\\xi)\\,e^{2\\pi i \\xi x} \\,d\\xi\n$$`
-    });
-
-    addMessage({ type: 'sync', sender: 'user', content: 'Can you make tables I can export?' });
-    addMessage({
-      type: 'sync',
-      sender: 'assistant',
-      content: `Yes! Tables come with a **CSV Export** button automatically.\n\n| ID | Name | Role | Status |\n|----|------|------|--------|\n| 001 | Alice | Admin | Active |\n| 002 | Bob | User | Offline |`
-    });
-
-    addMessage({ type: 'sync', sender: 'user', content: 'Do you do diagrams?' });
-    addMessage({
-      type: 'sync',
-      sender: 'assistant',
-      content: `I can generate dynamic diagrams using Mermaid.\n\n\`\`\`mermaid\ngraph LR\n    A[Start] --> B{success?}\n    B -- Yes --> C[Great!]\n    B -- No --> D[Retry]\n    D --> B\n\`\`\``
-    });
-
-    addMessage({ type: 'sync', sender: 'user', content: 'And your reasoning process?' });
-    addMessage({
-      type: 'reasoning',
-      sender: 'assistant',
-      content: 'I can show my internal thought process like this, collapsible above the message.',
-      reasoning: {
-        steps: [
-          { id: '1', text: 'Analyzing user request for capabilities demonstration...', status: 'complete' },
-          { id: '2', text: 'Generating comprehensive showcase including markdown, math, code, and diagrams.', status: 'complete' },
-          { id: '3', text: 'Verifying rendering pipeline for all components.', status: 'complete' }
-        ],
-        isExpanded: true
-      }
-    });
-
-    setIsLoading(false);
-  };
-
   const handleSend = async () => {
     if ((!inputValue.trim() && attachments.length === 0) || isLoading || isUploading) return;
 
@@ -377,37 +321,6 @@ const ChatPage = () => {
                 width: '100%',
                 maxWidth: 420
               }}>
-                <button
-                  onClick={handleViewDemo}
-                  style={{
-                    padding: '12px 20px',
-                    borderRadius: 12,
-                    border: '1px solid var(--color-primary)',
-                    background: 'var(--color-surface)',
-                    color: 'var(--color-primary)',
-                    fontSize: 15,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    marginBottom: 16,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
-                  }}
-                >
-                  <span style={{ fontSize: 18 }}>🎨</span> See Capabilities Demo
-                </button>
-
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -420,7 +333,7 @@ const ChatPage = () => {
                   letterSpacing: 0.5
                 }}>
                   <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }}></div>
-                  <span>Or try an example</span>
+                  <span>Try an example</span>
                   <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }}></div>
                 </div>
 
