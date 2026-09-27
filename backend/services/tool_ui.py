@@ -73,6 +73,15 @@ def describe_tool_start(
             "via_label": via_key,
         }
 
+    if name == "load_skill":
+        inp = _as_dict(tool_input)
+        skill = str(inp.get("name") or "").strip()
+        return {
+            "category": "tool",
+            "label": f"load_skill · {skill}" if skill else "load_skill",
+            "detail": _format_params(tool_input),
+        }
+
     return {
         "category": "tool",
         "label": name or "tool",

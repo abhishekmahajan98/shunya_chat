@@ -147,25 +147,13 @@ const ChatPage = () => {
       content: '',
       pending: true,
       reasoning: {
-        steps: [{
-          id: 'tool-planning',
-          text: 'Planning',
-          detail: 'Building the todo plan',
-          status: 'running',
-          category: 'plan',
-        }],
+        steps: [],
         isExpanded: true,
       },
     });
 
     let textContent = '';
-    const steps: ReasoningStep[] = [{
-      id: 'tool-planning',
-      text: 'Planning',
-      detail: 'Building the todo plan',
-      status: 'running',
-      category: 'plan',
-    }];
+    const steps: ReasoningStep[] = [];
     let todos: TodoItem[] = [];
     let citations: Citation[] = [];
 

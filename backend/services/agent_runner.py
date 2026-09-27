@@ -79,16 +79,16 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, default=str)}\n\n"
 
 
+_ROOT_AGENT_NAMES = frozenset({"deep_agent", "basic_agent", "model", "tools"})
+
+
 def _event_subagent_name(event: dict) -> str:
-    """True-ish label if this event is inside a nested subagent run."""
+    """Label if this event is inside a nested subagent (not the root agent)."""
     md = event.get("metadata") or {}
-    for key in ("lc_agent_name", "agent_name", "name"):
+    for key in ("lc_agent_name", "agent_name"):
         val = str(md.get(key) or "").strip().lower()
-        if val and val not in {"deep_agent", "model", "tools"}:
-            # e.g. general-purpose (DeepAgents default subagent)
-            if val not in {"on_chat_model_stream", "on_tool_start"}:
-                if "agent" in key or key == "lc_agent_name" or val == "general-purpose":
-                    return val
+        if val and val not in _ROOT_AGENT_NAMES:
+            return val
     ns = str(md.get("langgraph_checkpoint_ns") or "").lower()
     if "general-purpose" in ns:
         return "general-purpose"
@@ -151,11 +151,11 @@ async def stream_chat(
     assistants = store.ensure_default_assistants(user_id)
     _lap("assistants ready")
 
-    # Selected agents → MCP tools. Chat always runs the deep agent.
+    # Selected agents → deep_agent + MCP tools. None selected → basic_agent.
     enabled = [a for a in (active_agents or []) if a]
     tool_agents = list(enabled)
 
-    graph_id = "deep_agent"
+    graph_id = "deep_agent" if enabled else "basic_agent"
     assistant = next((a for a in assistants if a.get("graph_id") == graph_id), None)
     if not assistant:
         yield _sse({"type": "error", "content": f"No assistant seeded for {graph_id}"})
@@ -196,19 +196,20 @@ async def stream_chat(
     )
     await _flush()
 
-    # Immediate UI feedback before heavier prep / first LLM call
-    yield _sse(
-        {
-            "type": "tool_start",
-            "tool_run_id": "planning",
-            "tool_name": "planning",
-            "name": "planning",
-            "label": "Planning",
-            "detail": "Building the todo plan",
-            "category": "plan",
-        }
-    )
-    await _flush()
+    # Deep agent shows an immediate planning step; basic answers without a plan UI
+    if graph_id == "deep_agent":
+        yield _sse(
+            {
+                "type": "tool_start",
+                "tool_run_id": "planning",
+                "tool_name": "planning",
+                "name": "planning",
+                "label": "Planning",
+                "detail": "Building the todo plan",
+                "category": "plan",
+            }
+        )
+        await _flush()
 
     store.append_message(
         {
@@ -250,12 +251,12 @@ async def stream_chat(
                         "type": "status",
                         "step_id": "prep",
                         "label": (
-                            "Loaded agents & skills into the context"
+                            "Loaded agents and skills"
                             if tool_agents and skill_label
                             else (
                                 "Loaded agents into the context"
                                 if tool_agents
-                                else "Loaded skills into the context"
+                                else "Skills available"
                             )
                         ),
                         "detail": " · ".join(detail_bits) if detail_bits else "",
@@ -570,6 +571,7 @@ async def stream_chat(
                 if name not in {
                     "write_todos",
                     "cite_sources",
+                    "load_skill",
                     "task",
                     "ls",
                     "read_file",

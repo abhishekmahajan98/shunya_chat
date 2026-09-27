@@ -1,6 +1,6 @@
 ---
 name: datetime
-description: How to use date/time tools for "now", timezones, and day gaps. Use when the datetime agent is enabled.
+description: ALWAYS call load_skill(name="datetime") before any datetime__ tool. How to use date/time tools for now, timezones, and day gaps when the datetime agent is enabled.
 ---
 
 # Date & Time Skill

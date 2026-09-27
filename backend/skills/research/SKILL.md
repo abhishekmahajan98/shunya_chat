@@ -1,6 +1,6 @@
 ---
 name: research
-description: Multi-step research — prefer direct tools for trivial calls; delegate multi-tool batches to a subagent when those tools are enabled.
+description: ALWAYS call load_skill(name="research") before multi-step research or subagent delegation with enabled agents. Prefer direct tools for trivial calls; delegate multi-tool batches when those tools are enabled.
 ---
 
 # Research workflow

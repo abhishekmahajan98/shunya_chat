@@ -235,7 +235,7 @@ const PlanChecklist = ({ todos }: { todos: TodoItem[] }) => {
     );
 };
 
-    const ViaBadge = ({ via }: { via?: string }) => {
+const ViaBadge = ({ via }: { via?: string }) => {
     if (!via) return null;
     return (
         <span style={{
@@ -254,13 +254,26 @@ const PlanChecklist = ({ todos }: { todos: TodoItem[] }) => {
     );
 };
 
+const viaMatchesSubagent = (via: string | undefined, sub: ReasoningStep): boolean => {
+    if (!via) return false;
+    const v = via.toLowerCase().trim();
+    const label = (sub.text || '').toLowerCase().trim();
+    if (v === label) return true;
+    const vn = v.match(/sub\s*agent\s*(\d+)/);
+    const ln = label.match(/sub\s*agent\s*(\d+)/);
+    return !!(vn && ln && vn[1] === ln[1]);
+};
+
 // Finished tools fold into expandable; currently-running tools stay visible
 const ToolsGroup = ({
     steps,
     stepIcon,
+    showVia = false,
 }: {
     steps: ReasoningStep[];
     stepIcon: (step: ReasoningStep, muted?: boolean) => ReactNode;
+    /** When nested under a subagent, hierarchy replaces via badges */
+    showVia?: boolean;
 }) => {
     const [expanded, setExpanded] = useState(false);
     if (!steps.length) return null;
@@ -302,7 +315,7 @@ const ToolsGroup = ({
                                     icon={stepIcon(step, true)}
                                     title={step.text}
                                     detail={step.detail}
-                                    via={step.via}
+                                    via={showVia ? step.via : undefined}
                                 />
                             ))}
                         </div>
@@ -316,12 +329,40 @@ const ToolsGroup = ({
                     icon={stepIcon(step)}
                     title={step.text}
                     detail={step.detail}
-                    via={step.via}
+                    via={showVia ? step.via : undefined}
                 />
             ))}
         </div>
     );
 };
+
+/** Sub agent N row with its nested tool calls indented underneath */
+const SubagentGroup = ({
+    step,
+    nestedTools,
+    stepIcon,
+}: {
+    step: ReasoningStep;
+    nestedTools: ReasoningStep[];
+    stepIcon: (step: ReasoningStep, muted?: boolean) => ReactNode;
+}) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <TimelineRow
+            icon={stepIcon(step)}
+            title={step.text}
+            detail={step.detail}
+        />
+        {nestedTools.length > 0 ? (
+            <div style={{
+                marginLeft: 14,
+                paddingLeft: 12,
+                borderLeft: '1px solid var(--color-border)',
+            }}>
+                <ToolsGroup steps={nestedTools} stepIcon={stepIcon} showVia={false} />
+            </div>
+        ) : null}
+    </div>
+);
 
 const TimelineRow = ({
     icon,
@@ -446,8 +487,8 @@ const UnifiedReasoningDisplay = ({
         );
     };
 
-    // Build body in stream order: after plan, emit contiguous tool batches +
-    // each Sub agent N as its own step (tools that ran via them keep via=).
+    // Build body in stream order: after plan, emit parent tool batches and
+    // Sub agent N groups with nested tools indented underneath.
     const bodyRows: ReactNode[] = [];
     prepSteps.forEach((step) => {
         bodyRows.push(
@@ -485,37 +526,88 @@ const UnifiedReasoningDisplay = ({
         );
     });
 
-    // Walk workSteps: batch consecutive real tools into ToolsGroup; emit
-    // Sub agent N as standalone rows when they appear.
-    let toolBatch: ReasoningStep[] = [];
-    let batchKey = 0;
-    const flushTools = () => {
-        if (!toolBatch.length) return;
-        bodyRows.push(
-            <ToolsGroup
-                key={`tools-group-${batchKey++}`}
-                steps={toolBatch}
-                stepIcon={stepIcon}
-            />
-        );
-        toolBatch = [];
+    type WorkBlock =
+        | { kind: 'tools'; steps: ReasoningStep[] }
+        | { kind: 'subagent'; step: ReasoningStep; children: ReasoningStep[] };
+
+    const workBlocks: WorkBlock[] = [];
+    let parentToolBatch: ReasoningStep[] = [];
+    let openSub: { step: ReasoningStep; children: ReasoningStep[] } | null = null;
+
+    const flushParentTools = () => {
+        if (!parentToolBatch.length) return;
+        workBlocks.push({ kind: 'tools', steps: parentToolBatch });
+        parentToolBatch = [];
     };
+    const flushSub = () => {
+        if (!openSub) return;
+        workBlocks.push({
+            kind: 'subagent',
+            step: openSub.step,
+            children: openSub.children,
+        });
+        openSub = null;
+    };
+
+    const attachToMatchingSub = (tool: ReasoningStep): boolean => {
+        if (openSub && viaMatchesSubagent(tool.via, openSub.step)) {
+            openSub.children.push(tool);
+            return true;
+        }
+        for (let i = workBlocks.length - 1; i >= 0; i--) {
+            const b = workBlocks[i];
+            if (b.kind === 'subagent' && viaMatchesSubagent(tool.via, b.step)) {
+                b.children.push(tool);
+                return true;
+            }
+        }
+        return false;
+    };
+
     workSteps.forEach((step) => {
         if (isSubagentStep(step)) {
-            flushTools();
+            flushParentTools();
+            flushSub();
+            openSub = { step, children: [] };
+            return;
+        }
+        if (step.via) {
+            flushParentTools();
+            if (!attachToMatchingSub(step)) {
+                // Orphan via — keep visible at parent level with badge
+                parentToolBatch.push(step);
+            }
+            return;
+        }
+        // Parent-level tool — close any open subagent group first
+        flushSub();
+        parentToolBatch.push(step);
+    });
+    flushParentTools();
+    flushSub();
+
+    let batchKey = 0;
+    workBlocks.forEach((block) => {
+        if (block.kind === 'tools') {
             bodyRows.push(
-                <TimelineRow
-                    key={step.id}
-                    icon={stepIcon(step)}
-                    title={step.text}
-                    detail={step.detail}
+                <ToolsGroup
+                    key={`tools-group-${batchKey++}`}
+                    steps={block.steps}
+                    stepIcon={stepIcon}
+                    showVia
                 />
             );
         } else {
-            toolBatch.push(step);
+            bodyRows.push(
+                <SubagentGroup
+                    key={block.step.id}
+                    step={block.step}
+                    nestedTools={block.children}
+                    stepIcon={stepIcon}
+                />
+            );
         }
     });
-    flushTools();
 
     return (
         <div style={{ marginBottom: 12 }}>

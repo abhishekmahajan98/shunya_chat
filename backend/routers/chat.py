@@ -29,7 +29,7 @@ async def list_models():
 
 @router.get("/agents", response_model=list[AgentInfo])
 async def list_agents():
-    """Capability agents the UI can toggle. Any selected → deep_agent + /mcp/{id} tools."""
+    """Capability agents the UI can toggle. Any selected → deep_agent + MCP tools; none → basic_agent."""
     return get_available_agents()
 
 

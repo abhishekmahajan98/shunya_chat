@@ -1,6 +1,6 @@
 ---
 name: calculator
-description: How to plan and use math/calculator tools when that agent is enabled.
+description: ALWAYS call load_skill(name="calculator") before any calculator__ tool. How to plan and use math/calculator tools when the calculator agent is enabled.
 ---
 
 # Calculator skill

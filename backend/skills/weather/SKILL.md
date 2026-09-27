@@ -1,6 +1,6 @@
 ---
 name: weather
-description: How to use the weather agent for current conditions. Use when the weather agent is enabled.
+description: ALWAYS call load_skill(name="weather") before any weather__ tool. How to use the weather agent for current conditions when the weather agent is enabled.
 ---
 
 # Weather Skill

@@ -1,6 +1,6 @@
 ---
 name: search
-description: How to plan and use the web/docs search capability when that agent is enabled.
+description: ALWAYS call load_skill(name="search") before any search__ tool. How to plan and use web/docs search when the search agent is enabled.
 ---
 
 # Search skill

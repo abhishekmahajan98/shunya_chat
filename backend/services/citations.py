@@ -133,7 +133,7 @@ def citations_from_tool(
     `cite_sources` for those.
     """
     name = tool_name or "tool"
-    if name in {"cite_sources", "write_todos", "task"}:
+    if name in {"cite_sources", "write_todos", "task", "load_skill"}:
         return []
 
     out_text = _content_text(tool_output)
