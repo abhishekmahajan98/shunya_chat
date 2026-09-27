@@ -235,11 +235,8 @@ const PlanChecklist = ({ todos }: { todos: TodoItem[] }) => {
     );
 };
 
-const ViaBadge = ({ via }: { via?: string }) => {
+    const ViaBadge = ({ via }: { via?: string }) => {
     if (!via) return null;
-    const label = via === 'verifier' || via === 'gatherer'
-        ? via
-        : via.replace(/_/g, ' ');
     return (
         <span style={{
             marginLeft: 6,
@@ -252,7 +249,7 @@ const ViaBadge = ({ via }: { via?: string }) => {
             textTransform: 'lowercase',
             whiteSpace: 'nowrap',
         }}>
-            via {label}
+            via {via}
         </span>
     );
 };
@@ -399,11 +396,12 @@ const UnifiedReasoningDisplay = ({
         s.category === 'prep' || s.id === 'prep';
     const isPlanStep = (s: ReasoningStep) =>
         s.id === 'tool-planning' || s.category === 'plan';
-    // Gatherer / verifier / other task→subagent — first-class steps, not tools
+    // Subagent task steps (Sub agent N) — first-class, not tools
     const isSubagentStep = (s: ReasoningStep) =>
-        s.category === 'verifier'
+        s.category === 'subagent'
+        || s.category === 'verifier'
         || s.category === 'gatherer'
-        || s.category === 'subagent';
+        || s.category === 'general-purpose';
     // Actual model tool calls (prep/plan/subagents are separate). Name+params from SSE.
     const isRealTool = (s: ReasoningStep) =>
         !isPrep(s) && !isPlanStep(s) && !isSubagentStep(s) && (s.category || 'tool') !== 'status';
@@ -422,10 +420,8 @@ const UnifiedReasoningDisplay = ({
         const done = planItems.filter((t) => t.status === 'completed').length;
         collapsedBits.push(`${done}/${planItems.length} done`);
     }
-    const gathererN = workSteps.filter((s) => s.category === 'gatherer').length;
-    const verifierN = workSteps.filter((s) => s.category === 'verifier').length;
-    if (gathererN) collapsedBits.push(gathererN === 1 ? 'gatherer' : `${gathererN} gatherers`);
-    if (verifierN) collapsedBits.push(verifierN === 1 ? 'verifier' : `${verifierN} verifiers`);
+    const subN = workSteps.filter(isSubagentStep).length;
+    if (subN) collapsedBits.push(subN === 1 ? '1 subagent' : `${subN} subagents`);
     const toolOnly = workSteps.filter(isRealTool);
     if (toolOnly.length) {
         collapsedBits.push(
@@ -451,7 +447,7 @@ const UnifiedReasoningDisplay = ({
     };
 
     // Build body in stream order: after plan, emit contiguous tool batches +
-    // each gatherer/verifier as its own step (tools that ran via them keep via=).
+    // each Sub agent N as its own step (tools that ran via them keep via=).
     const bodyRows: ReactNode[] = [];
     prepSteps.forEach((step) => {
         bodyRows.push(
@@ -490,7 +486,7 @@ const UnifiedReasoningDisplay = ({
     });
 
     // Walk workSteps: batch consecutive real tools into ToolsGroup; emit
-    // gatherer/verifier as standalone rows when they appear.
+    // Sub agent N as standalone rows when they appear.
     let toolBatch: ReasoningStep[] = [];
     let batchKey = 0;
     const flushTools = () => {

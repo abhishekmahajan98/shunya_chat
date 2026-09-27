@@ -80,24 +80,24 @@ def _sse(payload: dict) -> str:
 
 
 def _event_subagent_name(event: dict) -> str:
-    """Best-effort: which subagent owns this astream event (gatherer/verifier)."""
+    """True-ish label if this event is inside a nested subagent run."""
     md = event.get("metadata") or {}
     for key in ("lc_agent_name", "agent_name", "name"):
         val = str(md.get(key) or "").strip().lower()
-        if val in {"gatherer", "verifier"}:
-            return val
+        if val and val not in {"deep_agent", "model", "tools"}:
+            # e.g. general-purpose (DeepAgents default subagent)
+            if val not in {"on_chat_model_stream", "on_tool_start"}:
+                if "agent" in key or key == "lc_agent_name" or val == "general-purpose":
+                    return val
     ns = str(md.get("langgraph_checkpoint_ns") or "").lower()
-    if "verifier" in ns:
-        return "verifier"
-    if "gatherer" in ns:
-        return "gatherer"
+    if "general-purpose" in ns:
+        return "general-purpose"
     run_name = str(event.get("name") or md.get("langgraph_node") or "").strip().lower()
-    if run_name in {"gatherer", "verifier"}:
+    if run_name == "general-purpose":
         return run_name
     for tag in event.get("tags") or []:
-        t = str(tag).strip().lower()
-        if t in {"gatherer", "verifier"}:
-            return t
+        if str(tag).strip().lower() == "general-purpose":
+            return "general-purpose"
     return ""
 
 
@@ -151,7 +151,7 @@ async def stream_chat(
     assistants = store.ensure_default_assistants(user_id)
     _lap("assistants ready")
 
-    # Selected agents → MCP tools. Chat always runs the deep agent (plan + RSV).
+    # Selected agents → MCP tools. Chat always runs the deep agent.
     enabled = [a for a in (active_agents or []) if a]
     tool_agents = list(enabled)
 
@@ -304,16 +304,16 @@ async def stream_chat(
     collected_citations: list[dict] = []
     first_model_event = True
     planning_open = True
-    # Stack of open task→subagent runs so nested tools can be tagged (via=verifier)
+    # Stack of open task→subagent runs so nested tools can be tagged (via=…)
     active_subagents: list[dict] = []
-    # Do not stream gatherer/verifier briefs (or mid-plan chatter) into the bubble.
-    # Final answer streams only after verifier (deep_agent) or immediately (basic).
+    subagent_seq = 0  # Sub agent 1, 2, … for the UI
+    # Suppress nested subagent token streams; parent text after plan completes.
     answer_mode = graph_id != "deep_agent"
     held_text = ""
-    draft_text = ""  # preserved across tool calls for post-verifier fallback
+    draft_text = ""  # preserved across tool calls for end-of-turn fallback
 
     async def _emit_todos(todos: list[dict]):
-        nonlocal latest_todos, planning_open
+        nonlocal latest_todos, planning_open, answer_mode, held_text, assistant_text
         latest_todos = todos
         if planning_open:
             planning_open = False
@@ -331,28 +331,54 @@ async def stream_chat(
             await _flush()
         yield _sse({"type": "todos", "todos": todos})
         await _flush()
+        if todos and all((t.get("status") or "") == "completed" for t in todos):
+            answer_mode = True
+            parked = held_text.strip()
+            if parked and not assistant_text:
+                held_text = ""
+                assistant_text += parked
+                yield _sse({"type": "text", "content": parked})
+                await _flush()
+
+    def _tool_under_open_task(event: dict) -> str:
+        """via label only when this event is nested under an open task run_id."""
+        parent_ids = {str(p) for p in (event.get("parent_ids") or [])}
+        if parent_ids and active_subagents:
+            for s in active_subagents:
+                if str(s.get("run_id")) in parent_ids:
+                    return str(s.get("via_label") or s.get("type") or "")
+        return ""
+
+    def _resolve_via(event: dict) -> str:
+        """UI via label for nested tools — never tag parent siblings of an open task."""
+        via = _tool_under_open_task(event)
+        if via:
+            return via
+        # Nested run without matching parent_ids (run_id drift) — use metadata
+        if _event_subagent_name(event):
+            if len(active_subagents) == 1:
+                return str(
+                    active_subagents[0].get("via_label")
+                    or active_subagents[0].get("type")
+                    or "subagent"
+                )
+            return "subagent"
+        return ""
+
+    def _is_nested_subagent_event(event: dict) -> bool:
+        """True only for tools/tokens inside a subagent — not parent parallels."""
+        return bool(_tool_under_open_task(event) or _event_subagent_name(event))
 
     def _hold_or_stream_text(text: str):
         """Yield SSE text only in answer_mode; otherwise park it (may be discarded)."""
         nonlocal assistant_text, held_text
         if not text:
             return None
-        if active_subagents:
-            # Nested gatherer/verifier tokens — never show in the chat bubble
-            return None
         if answer_mode:
             assistant_text += text
             return _sse({"type": "text", "content": text})
         held_text += text
         return None
-
-    def _current_via(event: dict) -> str:
-        tagged = _event_subagent_name(event)
-        if tagged:
-            return tagged
-        if active_subagents:
-            return str(active_subagents[-1].get("type") or "")
-        return ""
 
     try:
         async for event in graph.astream_events(
@@ -376,9 +402,9 @@ async def stream_chat(
                 chunk = data.get("chunk")
                 if chunk is None:
                     continue
-                # Nested subagent streams also have lc_agent_name — suppress even
-                # if our stack briefly drifted.
-                if _event_subagent_name(event) or active_subagents:
+                # Nested subagent streams only — keep parent tokens even while
+                # a parallel task is open.
+                if _is_nested_subagent_event(event):
                     continue
                 text = _content_to_text(getattr(chunk, "content", None))
                 payload = _hold_or_stream_text(text)
@@ -421,17 +447,26 @@ async def stream_chat(
                         await _flush()
                     continue
 
-                ui = describe_tool_start(name, tool_input)
-                via = _current_via(event)
+                via = _resolve_via(event)
+                sub_index: int | None = None
                 if name == "task":
-                    sub = (
-                        ui.get("subagent")
-                        or ui.get("category")
-                        or _event_subagent_name(event)
-                        or "subagent"
-                    )
-                    active_subagents.append({"run_id": run_id, "type": sub})
+                    subagent_seq += 1
+                    sub_index = subagent_seq
                     via = ""  # the subagent step itself is not "via" itself
+
+                ui = describe_tool_start(
+                    name, tool_input, subagent_index=sub_index
+                )
+                if name == "task":
+                    active_subagents.append(
+                        {
+                            "run_id": run_id,
+                            "type": ui.get("subagent") or f"sub agent {sub_index}",
+                            "via_label": ui.get("via_label")
+                            or f"sub agent {sub_index}",
+                            "index": sub_index,
+                        }
+                    )
 
                 tool_buffers[run_id] = {
                     "name": name,
@@ -439,6 +474,7 @@ async def stream_chat(
                     "via": via,
                     "is_subagent": name == "task",
                     "subagent": (ui.get("subagent") or "") if name == "task" else "",
+                    "subagent_index": sub_index,
                 }
 
                 logger.info(
@@ -561,34 +597,35 @@ async def stream_chat(
                         )
                         await _flush()
 
-                ui = describe_tool_end(name, tool_input, output_text)
-                via = meta.get("via") or _event_subagent_name(event) or ""
+                ui = describe_tool_end(
+                    name,
+                    tool_input,
+                    output_text,
+                    subagent_index=meta.get("subagent_index"),
+                )
+                via = meta.get("via") or _resolve_via(event) or ""
                 if name == "task":
-                    sub = (
-                        meta.get("subagent")
-                        or ui.get("subagent")
-                        or ui.get("category")
-                        or ""
-                    )
                     # Only pop the matching open subagent — never the "latest" on
                     # a mismatched run_id (that prematurely untagged nested tools).
                     closed = False
                     for i in range(len(active_subagents) - 1, -1, -1):
                         if active_subagents[i]["run_id"] == run_id:
-                            sub = active_subagents[i].get("type") or sub
                             active_subagents.pop(i)
                             closed = True
                             break
                     if not closed and len(active_subagents) == 1:
-                        # Single open task + unmatched id → still close it
-                        sub = active_subagents[0].get("type") or sub
                         active_subagents.pop()
-                        closed = True
                     via = ""
-                    # After verifier, subsequent parent tokens are the user-facing answer
-                    if str(sub).lower() == "verifier":
-                        answer_mode = True
-                        held_text = ""
+                    # Prefer end-event label (keeps Sub agent N if start args were empty)
+                    if meta.get("subagent_index") and not ui.get("label", "").startswith(
+                        "Sub agent"
+                    ):
+                        ui = describe_tool_end(
+                            name,
+                            tool_input or meta.get("input"),
+                            output_text,
+                            subagent_index=meta.get("subagent_index"),
+                        )
 
                 end_payload = {
                     "type": "tool_end",
@@ -670,7 +707,7 @@ async def stream_chat(
                 if parsed:
                     async for chunk in _emit_todos(parsed):
                         yield chunk
-            # Recover answer if streaming gates dropped it (common after verifier)
+            # Recover answer if streaming gates dropped it (held mid-tool)
             if not assistant_text.strip():
                 recovered = (
                     held_text.strip()

@@ -16,7 +16,7 @@ export interface ReasoningStep {
     detail?: string;
     status: 'pending' | 'running' | 'complete' | 'failed';
     category?: string;
-    /** When set, this tool ran inside a subagent (e.g. verifier / gatherer). */
+    /** When set, this tool ran inside a subagent (e.g. "sub agent 1"). */
     via?: string;
 }
 

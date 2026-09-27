@@ -1,4 +1,4 @@
-"""Format tool activity for the chat UI — tool name + params, with subagent labels."""
+"""Format tool activity for the chat UI — tool name + params, Sub agent N labels."""
 
 from __future__ import annotations
 
@@ -42,21 +42,6 @@ def _format_params(tool_input: Any, *, max_len: int = 240) -> str:
     return text[: max_len - 1] + "…"
 
 
-def _task_subagent_type(tool_input: Any) -> str:
-    inp = _as_dict(tool_input)
-    # LangChain sometimes nests args under "input" / "args"
-    nested = _as_dict(inp.get("input") or inp.get("args") or {})
-    sub = (
-        inp.get("subagent_type")
-        or inp.get("agent")
-        or nested.get("subagent_type")
-        or nested.get("agent")
-        or inp.get("name")
-        or ""
-    )
-    return str(sub).strip().lower()
-
-
 def _task_description(tool_input: Any) -> str:
     inp = _as_dict(tool_input)
     nested = _as_dict(inp.get("input") or inp.get("args") or {})
@@ -65,29 +50,27 @@ def _task_description(tool_input: Any) -> str:
     ).strip()
 
 
-_SUBAGENT_LABELS = {
-    "verifier": "Verifier",
-    "gatherer": "Gatherer",
-}
+def describe_tool_start(
+    name: str,
+    tool_input: Any,
+    *,
+    subagent_index: int | None = None,
+) -> dict[str, str]:
+    """label/detail/category for a tool_start event.
 
-
-def describe_tool_start(name: str, tool_input: Any) -> dict[str, str]:
-    """label/detail/category for a tool_start event."""
+    For task tools, pass subagent_index (1-based) so the UI shows
+    \"Sub agent 1\", \"Sub agent 2\", …
+    """
     if name == "task":
-        sub = _task_subagent_type(tool_input)
-        desc = _task_description(tool_input)
-        if sub in _SUBAGENT_LABELS:
-            return {
-                "category": sub,
-                "label": _SUBAGENT_LABELS[sub],
-                "detail": desc,
-                "subagent": sub,
-            }
+        n = int(subagent_index or 1)
+        label = f"Sub agent {n}"
+        via_key = f"sub agent {n}"
         return {
             "category": "subagent",
-            "label": (sub or "subagent").replace("_", " ").title(),
-            "detail": desc,
-            "subagent": sub or "subagent",
+            "label": label,
+            "detail": _task_description(tool_input),
+            "subagent": via_key,
+            "via_label": via_key,
         }
 
     return {
@@ -97,7 +80,13 @@ def describe_tool_start(name: str, tool_input: Any) -> dict[str, str]:
     }
 
 
-def describe_tool_end(name: str, tool_input: Any, output: Any = None) -> dict[str, str]:
+def describe_tool_end(
+    name: str,
+    tool_input: Any,
+    output: Any = None,
+    *,
+    subagent_index: int | None = None,
+) -> dict[str, str]:
     """Same as start — do not surface tool response on the timeline."""
-    start = describe_tool_start(name, tool_input)
+    start = describe_tool_start(name, tool_input, subagent_index=subagent_index)
     return {**start, "summary": ""}

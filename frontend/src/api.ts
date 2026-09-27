@@ -72,7 +72,7 @@ export interface StreamChunk {
     detail?: string;
     summary?: string;
     category?: string;
-    /** Subagent that owns this nested tool call (verifier / gatherer). */
+    /** Subagent that owns this nested tool call (e.g. "sub agent 1"). */
     via?: string;
     step_id?: string;
     agents?: string[];
