@@ -13,6 +13,7 @@ from config import AVAILABLE_MODELS, AgentInfo, ModelInfo, get_available_agents,
 from db import get_store
 from models import ConversationDetail, ConversationSummary, MessageCreate, MessageOut
 from services.agent_runner import stream_chat
+from services.compaction import insert_compaction_markers
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -81,8 +82,10 @@ async def get_thread(thread_id: str, user: DummyUser = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Thread not found")
 
     messages = store.list_messages(thread_id)
-    # UI currently expects user/assistant; hide raw tool rows from the transcript
+    compactions = store.list_compactions(thread_id)
+    # UI currently expects user/assistant (+ system compaction markers)
     visible = [m for m in messages if m["role"] in ("user", "assistant")]
+    with_markers = insert_compaction_markers(visible, compactions)
     return {
         "id": thread["id"],
         "title": thread.get("title") or "New Chat",
@@ -90,6 +93,7 @@ async def get_thread(thread_id: str, user: DummyUser = Depends(get_current_user)
         "created_at": thread["created_at"],
         "updated_at": thread["updated_at"],
         "assistant_id": thread.get("assistant_id"),
+        "compactions": compactions,
         "messages": [
             MessageOut(
                 id=m["id"],
@@ -100,7 +104,7 @@ async def get_thread(thread_id: str, user: DummyUser = Depends(get_current_user)
                 tool_calls=m.get("tool_calls"),
                 agents=(m.get("additional_kwargs") or {}).get("active_agents"),
             )
-            for m in visible
+            for m in with_markers
         ],
     }
 

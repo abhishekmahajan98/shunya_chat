@@ -42,7 +42,7 @@ export interface TodoItem {
 export interface Message {
     id: string;
     type: 'sync' | 'reasoning' | 'async-task';
-    sender: 'user' | 'assistant';
+    sender: 'user' | 'assistant' | 'system';
     content: string;
     timestamp: Date;
     citations?: Citation[];
@@ -55,12 +55,16 @@ export interface Message {
     agents?: string[];
     pending?: boolean;
     attachments?: Attachment[];
+    /** When set, this is a compaction notice (expandable summary). */
+    compactionSummary?: string;
 }
 
 interface ChatContextType {
     messages: Message[];
     addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => string;
     updateMessage: (id: string, updates: Partial<Message> | ((prev: Message) => Partial<Message>)) => void;
+    insertMessageBefore: (beforeId: string, message: Omit<Message, 'id' | 'timestamp'>) => string;
+    removeMessage: (id: string) => void;
     clearMessages: () => void;
     conversationId: string | null;
     setConversationId: (id: string | null) => void;
@@ -141,6 +145,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         );
     };
 
+    const insertMessageBefore = (beforeId: string, message: Omit<Message, 'id' | 'timestamp'>) => {
+        const id = crypto.randomUUID();
+        const row: Message = { ...message, id, timestamp: new Date() };
+        setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === beforeId);
+            if (idx < 0) return [...prev, row];
+            const next = [...prev];
+            next.splice(idx, 0, row);
+            return next;
+        });
+        return id;
+    };
+
+    const removeMessage = (id: string) => {
+        setMessages((prev) => prev.filter((m) => m.id !== id));
+    };
+
     const loadMoreHistory = async () => {
         if (isLoadingHistory || !hasMoreHistory) return;
         setIsLoadingHistory(true);
@@ -163,18 +184,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setConversationId(data.id);
             setMessages(
                 data.messages
-                    .filter((m) => m.role === 'user' || m.role === 'assistant')
-                    .map((msg) => ({
-                        id: msg.id,
-                        type: 'sync' as const,
-                        sender: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
-                        content: msg.content,
-                        timestamp: new Date(msg.created_at),
-                        attachments: msg.attachments as Attachment[] | undefined,
-                        agents: msg.agents || (msg.additional_kwargs?.active_agents as string[] | undefined),
-                        todos: (msg.additional_kwargs?.todos as TodoItem[] | undefined) || undefined,
-                        citations: (msg.additional_kwargs?.citations as Citation[] | undefined) || undefined,
-                    }))
+                    .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
+                    .map((msg) => {
+                        const kwargs = msg.additional_kwargs || {};
+                        const isCompaction = kwargs.kind === 'compaction' || msg.role === 'system';
+                        return {
+                            id: msg.id,
+                            type: 'sync' as const,
+                            sender: isCompaction
+                                ? ('system' as const)
+                                : msg.role === 'user'
+                                  ? ('user' as const)
+                                  : ('assistant' as const),
+                            content: msg.content,
+                            timestamp: new Date(msg.created_at),
+                            attachments: msg.attachments as Attachment[] | undefined,
+                            agents: msg.agents || (kwargs.active_agents as string[] | undefined),
+                            todos: (kwargs.todos as TodoItem[] | undefined) || undefined,
+                            citations: (kwargs.citations as Citation[] | undefined) || undefined,
+                            compactionSummary: isCompaction
+                                ? String(kwargs.summary || '')
+                                : undefined,
+                        };
+                    })
             );
         } catch (error) {
             console.error('Failed to load conversation:', error);
@@ -193,6 +225,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 messages,
                 addMessage,
                 updateMessage,
+                insertMessageBefore,
+                removeMessage,
                 clearMessages: () => {
                     setMessages([]);
                     refreshHistory();

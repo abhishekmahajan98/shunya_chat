@@ -83,3 +83,4 @@ class ConversationDetail(BaseModel):
     created_at: datetime | str
     updated_at: datetime | str
     assistant_id: Optional[str] = None
+    compactions: list[dict] = Field(default_factory=list)

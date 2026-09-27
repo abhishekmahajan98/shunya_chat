@@ -66,6 +66,15 @@ class Store(ABC):
     def append_message(self, data: dict) -> dict: ...
 
     @abstractmethod
+    def list_compactions(self, thread_id: str) -> list[dict]: ...
+
+    @abstractmethod
+    def get_latest_compaction(self, thread_id: str) -> Optional[dict]: ...
+
+    @abstractmethod
+    def create_compaction(self, data: dict) -> dict: ...
+
+    @abstractmethod
     def ensure_default_assistants(self, user_id: str) -> list[dict]: ...
 
 
@@ -74,6 +83,7 @@ class MemoryStore(Store):
         self.assistants: dict[str, dict] = {}
         self.threads: dict[str, dict] = {}
         self.messages: dict[str, list[dict]] = {}
+        self.compactions: dict[str, list[dict]] = {}
 
     def list_assistants(self, user_id: str) -> list[dict]:
         items = [a for a in self.assistants.values() if a["user_id"] == user_id]
@@ -121,6 +131,7 @@ class MemoryStore(Store):
             if t["assistant_id"] == assistant_id:
                 self.threads.pop(tid, None)
                 self.messages.pop(tid, None)
+                self.compactions.pop(tid, None)
         del self.assistants[assistant_id]
         return True
 
@@ -151,6 +162,7 @@ class MemoryStore(Store):
         }
         self.threads[row["id"]] = row
         self.messages[row["id"]] = []
+        self.compactions[row["id"]] = []
         return deepcopy(row)
 
     def update_thread(self, thread_id: str, user_id: str, patch: dict) -> Optional[dict]:
@@ -169,6 +181,7 @@ class MemoryStore(Store):
             return False
         del self.threads[thread_id]
         self.messages.pop(thread_id, None)
+        self.compactions.pop(thread_id, None)
         return True
 
     def list_messages(self, thread_id: str) -> list[dict]:
@@ -188,6 +201,27 @@ class MemoryStore(Store):
         self.messages.setdefault(data["thread_id"], []).append(row)
         if data["thread_id"] in self.threads:
             self.threads[data["thread_id"]]["updated_at"] = _now()
+        return deepcopy(row)
+
+    def list_compactions(self, thread_id: str) -> list[dict]:
+        items = list(self.compactions.get(thread_id, []))
+        items.sort(key=lambda c: c.get("created_at") or "")
+        return deepcopy(items)
+
+    def get_latest_compaction(self, thread_id: str) -> Optional[dict]:
+        items = self.list_compactions(thread_id)
+        return items[-1] if items else None
+
+    def create_compaction(self, data: dict) -> dict:
+        row = {
+            "id": data.get("id") or _new_id(),
+            "thread_id": data["thread_id"],
+            "summary": data.get("summary") or "",
+            "first_kept_message_id": data.get("first_kept_message_id"),
+            "file_path": data.get("file_path"),
+            "created_at": data.get("created_at") or _now(),
+        }
+        self.compactions.setdefault(data["thread_id"], []).append(row)
         return deepcopy(row)
 
     def ensure_default_assistants(self, user_id: str) -> list[dict]:
@@ -361,6 +395,38 @@ class SupabaseStore(Store):
         }
         res = self.client.table("messages").insert(row).execute()
         self.client.table("threads").update({"updated_at": _now()}).eq("id", data["thread_id"]).execute()
+        return res.data[0]
+
+    def list_compactions(self, thread_id: str) -> list[dict]:
+        res = (
+            self.client.table("compactions")
+            .select("*")
+            .eq("thread_id", thread_id)
+            .order("created_at")
+            .execute()
+        )
+        return res.data or []
+
+    def get_latest_compaction(self, thread_id: str) -> Optional[dict]:
+        res = (
+            self.client.table("compactions")
+            .select("*")
+            .eq("thread_id", thread_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    def create_compaction(self, data: dict) -> dict:
+        row = {
+            "id": data.get("id") or _new_id(),
+            "thread_id": data["thread_id"],
+            "summary": data.get("summary") or "",
+            "first_kept_message_id": data.get("first_kept_message_id"),
+            "file_path": data.get("file_path"),
+        }
+        res = self.client.table("compactions").insert(row).execute()
         return res.data[0]
 
     def ensure_default_assistants(self, user_id: str) -> list[dict]:

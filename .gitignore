@@ -30,3 +30,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Agent offloaded conversation history (runtime)
+backend/conversation_history/

@@ -33,6 +33,8 @@ const ChatPage = () => {
     messages,
     addMessage,
     updateMessage,
+    insertMessageBefore,
+    removeMessage,
     conversationId,
     setConversationId,
     clearMessages,
@@ -156,6 +158,7 @@ const ChatPage = () => {
     const steps: ReasoningStep[] = [];
     let todos: TodoItem[] = [];
     let citations: Citation[] = [];
+    let compactionPendingId: string | null = null;
 
     const pushSteps = (expanded = true) => {
       // Keep Agentic Reasoning open while a plan exists so todos stay visible
@@ -226,6 +229,41 @@ const ChatPage = () => {
               detail: c.detail,
             }));
             pushSteps(true);
+          } else if (chunk.type === 'compaction_start') {
+            compactionPendingId = addMessage({
+              type: 'sync',
+              sender: 'system',
+              content: chunk.content || 'Compacting context…',
+              pending: true,
+            });
+          } else if (chunk.type === 'compaction_end') {
+            if (compactionPendingId) {
+              removeMessage(compactionPendingId);
+              compactionPendingId = null;
+            }
+          } else if (chunk.type === 'compaction') {
+            if (compactionPendingId) {
+              updateMessage(compactionPendingId, {
+                pending: false,
+                content: chunk.content || 'Context compacted',
+                compactionSummary: chunk.summary || '',
+              });
+              compactionPendingId = null;
+            } else if (chunk.first_kept_message_id) {
+              insertMessageBefore(chunk.first_kept_message_id, {
+                type: 'sync',
+                sender: 'system',
+                content: chunk.content || 'Context compacted',
+                compactionSummary: chunk.summary || '',
+              });
+            } else {
+              addMessage({
+                type: 'sync',
+                sender: 'system',
+                content: chunk.content || 'Context compacted',
+                compactionSummary: chunk.summary || '',
+              });
+            }
           } else if (chunk.type === 'tool_start') {
             const id = chunk.tool_run_id === 'planning'
               ? 'tool-planning'

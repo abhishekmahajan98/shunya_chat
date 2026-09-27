@@ -916,7 +916,82 @@ const MessageFooter = ({
 
 const MessageRenderer = memo(({ message }: MessageRendererProps) => {
     const isUser = message.sender === 'user';
+    const isSystem = message.sender === 'system';
     const [citationsOpen, setCitationsOpen] = useState(false);
+    const [summaryOpen, setSummaryOpen] = useState(false);
+
+    // Compaction / system notice — horizontal rule with clickable label
+    if (isSystem) {
+        const isCompacting = Boolean(message.pending);
+        const labelText = isCompacting ? 'compacting…' : 'compaction';
+        const label = (
+            <span style={{
+                color: '#c9a227',
+                fontSize: 11,
+                letterSpacing: '0.04em',
+                textTransform: 'lowercase',
+                whiteSpace: 'nowrap',
+                opacity: isCompacting ? 0.85 : 1,
+            }}>
+                {labelText}
+            </span>
+        );
+
+        return (
+            <div style={{ margin: '8px 0 16px', width: '100%' }}>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    width: '100%',
+                }}>
+                    <div style={{
+                        flex: 1,
+                        height: 1,
+                        background: 'var(--color-border)',
+                    }} />
+                    {message.compactionSummary && !isCompacting ? (
+                        <button
+                            type="button"
+                            onClick={() => setSummaryOpen((v) => !v)}
+                            title={summaryOpen ? 'Hide summary' : 'View summary'}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                padding: 0,
+                                margin: 0,
+                                cursor: 'pointer',
+                                lineHeight: 1,
+                            }}
+                        >
+                            {label}
+                        </button>
+                    ) : (
+                        label
+                    )}
+                    <div style={{
+                        flex: 1,
+                        height: 1,
+                        background: 'var(--color-border)',
+                    }} />
+                </div>
+                {summaryOpen && message.compactionSummary && !isCompacting ? (
+                    <div style={{
+                        margin: '10px 0 0',
+                        maxHeight: 280,
+                        overflow: 'auto',
+                        fontSize: 12,
+                        color: 'var(--color-text-secondary)',
+                        lineHeight: 1.5,
+                    }}
+                    className="compaction-summary"
+                    >
+                        <AIResponse content={message.compactionSummary} compact />
+                    </div>
+                ) : null}
+            </div>
+        );
+    }
 
     // Determine if thinking is active (running status)
     const isThinking = message.reasoning?.steps?.some(s => s.status === 'running') || false;

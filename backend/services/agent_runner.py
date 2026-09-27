@@ -20,6 +20,12 @@ from services.citations import (
     citations_from_tool,
     merge_citations,
 )
+from services.compaction import (
+    COMPACTION_NOTICE,
+    build_agent_messages,
+    maybe_compact_thread,
+    should_compact_thread,
+)
 from services.tool_ui import describe_tool_end, describe_tool_start
 
 logger = logging.getLogger("uvicorn.error")
@@ -80,6 +86,19 @@ def _sse(payload: dict) -> str:
 
 
 _ROOT_AGENT_NAMES = frozenset({"deep_agent", "basic_agent", "model", "tools"})
+
+
+def _is_internal_model_event(event: dict) -> bool:
+    """Skip middleware-internal LLM calls (e.g. summarization) in the UI stream."""
+    md = event.get("metadata") or {}
+    if md.get("lc_source") == "summarization":
+        return True
+    if "lc_internal_call" in md:
+        return True
+    tags = event.get("tags") or []
+    if any(str(t).lower() in {"summarization", "lc_internal_call"} for t in tags):
+        return True
+    return False
 
 
 def _event_subagent_name(event: dict) -> str:
@@ -281,7 +300,8 @@ async def stream_chat(
         "recursion_limit": 80,
     }
 
-    # Warm checkpointer → only the new turn. Cold (restart) → rebuild from DB.
+    # Warm checkpointer → only the new turn. Cold (restart) → rebuild from
+    # latest compaction summary + messages after it (else full DB history).
     try:
         state = await graph.aget_state(config)
         has_state = bool(state and state.values and state.values.get("messages"))
@@ -292,7 +312,21 @@ async def stream_chat(
     if has_state:
         lc_input = {"messages": [HumanMessage(content=content)]}
     else:
-        lc_input = {"messages": _db_messages_to_lc(history_rows)}
+        compaction = store.get_latest_compaction(thread_id)
+        lc_input = {
+            "messages": build_agent_messages(
+                history_rows,
+                compaction,
+                db_to_lc=_db_messages_to_lc,
+            )
+        }
+        if compaction:
+            logger.info(
+                "cold resume thread=%s using compaction=%s kept_from=%s",
+                thread_id,
+                compaction.get("id"),
+                compaction.get("first_kept_message_id"),
+            )
 
     ctx = Context(
         model=model or settings.MODEL,
@@ -312,6 +346,8 @@ async def stream_chat(
     answer_mode = graph_id != "deep_agent"
     held_text = ""
     draft_text = ""  # preserved across tool calls for end-of-turn fallback
+    # Summarization middleware LLM runs — never stream these to the UI
+    _suppress_model_runs: set[str] = set()
 
     async def _emit_todos(todos: list[dict]):
         nonlocal latest_todos, planning_open, answer_mode, held_text, assistant_text
@@ -399,13 +435,28 @@ async def stream_chat(
                 _lap(f"first graph event {kind}")
                 first_model_event = False
 
+            if kind == "on_chat_model_start":
+                run_id = str(event.get("run_id") or "")
+                if run_id and _is_internal_model_event(event):
+                    _suppress_model_runs.add(run_id)
+                    logger.info("suppressing internal model stream run_id=%s", run_id)
+                continue
+
             if kind == "on_chat_model_stream":
                 chunk = data.get("chunk")
                 if chunk is None:
                     continue
+                run_id = str(event.get("run_id") or "")
+                if run_id and run_id in _suppress_model_runs:
+                    continue
                 # Nested subagent streams only — keep parent tokens even while
                 # a parallel task is open.
                 if _is_nested_subagent_event(event):
+                    continue
+                # Compaction summary LLM must not appear as the assistant reply
+                if _is_internal_model_event(event):
+                    if run_id:
+                        _suppress_model_runs.add(run_id)
                     continue
                 text = _content_to_text(getattr(chunk, "content", None))
                 payload = _hold_or_stream_text(text)
@@ -661,6 +712,12 @@ async def stream_chat(
                     logger.exception("failed to persist tool message for %s", name)
 
             elif kind == "on_chat_model_end":
+                run_id = str(event.get("run_id") or "")
+                if run_id and run_id in _suppress_model_runs:
+                    _suppress_model_runs.discard(run_id)
+                    continue
+                if _is_internal_model_event(event):
+                    continue
                 # Capture write_todos / cite_sources from tool_call args when
                 # tool events arrive with empty input (common with some providers).
                 chunk = data.get("output") or data.get("result")
@@ -720,11 +777,13 @@ async def stream_chat(
                     assistant_text = recovered
                     yield _sse({"type": "text", "content": recovered})
                     await _flush()
+            # Mid-loop summarization middleware is silent — do not emit UI chips.
         except Exception:
             if not assistant_text.strip() and (held_text.strip() or draft_text.strip()):
                 assistant_text = held_text.strip() or draft_text.strip()
                 yield _sse({"type": "text", "content": assistant_text})
                 await _flush()
+            logger.exception("post-run state handling failed")
 
         held_text = ""
 
@@ -775,6 +834,41 @@ async def stream_chat(
             },
         }
     )
+
+    # Between-turn compaction: after the reply is saved, fold older durable turns.
+    try:
+        if should_compact_thread(store, thread_id):
+            yield _sse(
+                {
+                    "type": "compaction_start",
+                    "content": "Compacting context…",
+                    "label": "compacting",
+                }
+            )
+            await _flush()
+            compaction_row = await maybe_compact_thread(store, thread_id)
+            if compaction_row:
+                yield _sse(
+                    {
+                        "type": "compaction",
+                        "compaction_id": compaction_row["id"],
+                        "content": COMPACTION_NOTICE,
+                        "summary": compaction_row.get("summary") or "",
+                        "first_kept_message_id": compaction_row.get(
+                            "first_kept_message_id"
+                        ),
+                        "created_at": compaction_row.get("created_at"),
+                    }
+                )
+                await _flush()
+            else:
+                yield _sse({"type": "compaction_end", "content": "Compaction skipped"})
+                await _flush()
+    except Exception:
+        logger.exception("between-turn compaction failed thread=%s", thread_id)
+        yield _sse({"type": "compaction_end", "content": "Compaction failed"})
+        await _flush()
+
     yield _sse(
         {
             "type": "done",

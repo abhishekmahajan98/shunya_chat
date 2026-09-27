@@ -57,7 +57,7 @@ export interface ConversationDetail {
 }
 
 export interface StreamChunk {
-    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'status' | 'tool_start' | 'tool_end' | 'todos' | 'citations';
+    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'status' | 'tool_start' | 'tool_end' | 'todos' | 'citations' | 'compaction' | 'compaction_start' | 'compaction_end';
     content?: string;
     conversation_id?: string;
     thread_id?: string;
@@ -79,6 +79,9 @@ export interface StreamChunk {
     graph_id?: string;
     todos?: { content: string; status: string }[];
     citations?: { id: string; title: string; url?: string; agent?: string; detail?: string }[];
+    compaction_id?: string;
+    first_kept_message_id?: string;
+    created_at?: string;
 }
 
 export async function getMe(): Promise<{ id: string; email: string; name: string }> {
