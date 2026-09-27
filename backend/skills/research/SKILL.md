@@ -15,10 +15,10 @@ Todo items must be **specific to the user's question** — name the entities, me
 comparisons, or checks involved. Never use bare generics like "Gather evidence" alone.
 
 Good examples:
-- `Search current LangGraph create_deep_agent skills API`
-- `Compare Postgres vs SQLite for Shunya thread storage`
-- `Recompute portfolio return with calculator`
-- `Verify the release-date claim with a second search`
+- `Look up current docs for create_deep_agent skills API`
+- `Compare Postgres vs SQLite for thread storage`
+- `Recompute the numeric result with an enabled math tool`
+- `Verify the release-date claim with a second tool call`
 
 Structure (adapt names to the prompt):
 1. One or more **gather** steps (specific)
@@ -34,29 +34,41 @@ After finishing a step, call `write_todos` again immediately:
 - set the next item `in_progress`
 Do **not** batch completions at the end. The UI plan must advance live.
 
-## 3. Gather
-Prefer `task` → `gatherer` when several tool calls are needed.
-Use only enabled agents/tools. No inventing search if it isn't selected.
+## 3. Gather (one step at a time)
+For each **gather** todo, in order:
+1. Ensure that todo is `in_progress`
+2. Call `task` → `gatherer` with a description of **only that todo**
+3. When gatherer returns, `write_todos`: mark it `completed`, next gather `in_progress`
+4. Call gatherer again for the next gather todo
+
+Do **not** pack step 1 and step 2 into one gatherer call. Do not mark a gather
+todo completed until its tools have run. The gatherer inventories its tool list
+and uses whatever is relevant to **that** step only.
 
 ## 4. Synthesize
 Draft from gathered evidence only. No invented numbers/facts.
+Do **not** call verifier until gather + synthesize for this turn are done.
 
-## 5. Verify
-Prefer `task` → `verifier`. Re-check contested claims with enabled tools.
+## 5. Verify (required)
+You MUST call `task` → `verifier` after synthesizing and before `cite_sources`
+or the final answer. Verifier is a **light re-check** (≤3 tool calls) — not
+primary research. After verifier returns, write the full user-facing answer.
+Skipping verify is not allowed when the `task` tool is available.
 
 ## 6. Finish
 Call `cite_sources`, mark **all** todos `completed`, then write the final answer.
 Do not give the final answer while any todo is still `pending` or `in_progress`.
+Do not give the final answer until `task→verifier` has run.
 
 ## Tools
 - `write_todos` — living plan (backbone)
-- `task` (`gatherer` / `verifier`)
+- `task` (`gatherer` / `verifier`) — **verifier is mandatory** before the answer
 - `cite_sources`
-- Enabled MCP tools only
+- Whatever other tools are enabled for this turn (see your tool list)
 
 ## Anti-patterns
 - Generic todos ("Gather evidence", "Synthesize answer", "Verify claims") with no prompt detail
 - Leaving the whole plan `pending` until the end
-- Skipping verify on multi-claim answers
-- Assuming search exists when it wasn't selected
+- Skipping `task→verifier` (or only "verifying" in prose without the subagent)
+- Assuming a capability exists when it is not in the tool list
 - Dumping raw tool JSON to the user

@@ -79,6 +79,55 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, default=str)}\n\n"
 
 
+def _event_subagent_name(event: dict) -> str:
+    """Best-effort: which subagent owns this astream event (gatherer/verifier)."""
+    md = event.get("metadata") or {}
+    for key in ("lc_agent_name", "agent_name", "name"):
+        val = str(md.get(key) or "").strip().lower()
+        if val in {"gatherer", "verifier"}:
+            return val
+    ns = str(md.get("langgraph_checkpoint_ns") or "").lower()
+    if "verifier" in ns:
+        return "verifier"
+    if "gatherer" in ns:
+        return "gatherer"
+    run_name = str(event.get("name") or md.get("langgraph_node") or "").strip().lower()
+    if run_name in {"gatherer", "verifier"}:
+        return run_name
+    for tag in event.get("tags") or []:
+        t = str(tag).strip().lower()
+        if t in {"gatherer", "verifier"}:
+            return t
+    return ""
+
+
+def _last_final_ai_text(messages: list) -> str:
+    """Last parent-facing AI text that is not a pure tool-call turn."""
+    for msg in reversed(messages or []):
+        if not isinstance(msg, AIMessage):
+            # duck-typed
+            role = getattr(msg, "type", None) or getattr(msg, "role", None)
+            if role not in {"ai", "assistant"} and not isinstance(msg, AIMessage):
+                continue
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        text = _content_to_text(getattr(msg, "content", None)).strip()
+        if text and not tool_calls:
+            return text
+        # Some providers put text alongside tool_calls — prefer pure text turns
+        if text and tool_calls and len(text) > 80:
+            # Likely not the final answer if it's mid-tooling; keep looking
+            continue
+    # Fallback: last AI message with any text
+    for msg in reversed(messages or []):
+        if isinstance(msg, ToolMessage):
+            continue
+        text = _content_to_text(getattr(msg, "content", None)).strip()
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        if text and not tool_calls:
+            return text
+    return ""
+
+
 async def _flush() -> None:
     """Let ASGI write the previous yield before more sync/await work."""
     await asyncio.sleep(0)
@@ -255,6 +304,13 @@ async def stream_chat(
     collected_citations: list[dict] = []
     first_model_event = True
     planning_open = True
+    # Stack of open task→subagent runs so nested tools can be tagged (via=verifier)
+    active_subagents: list[dict] = []
+    # Do not stream gatherer/verifier briefs (or mid-plan chatter) into the bubble.
+    # Final answer streams only after verifier (deep_agent) or immediately (basic).
+    answer_mode = graph_id != "deep_agent"
+    held_text = ""
+    draft_text = ""  # preserved across tool calls for post-verifier fallback
 
     async def _emit_todos(todos: list[dict]):
         nonlocal latest_todos, planning_open
@@ -275,6 +331,28 @@ async def stream_chat(
             await _flush()
         yield _sse({"type": "todos", "todos": todos})
         await _flush()
+
+    def _hold_or_stream_text(text: str):
+        """Yield SSE text only in answer_mode; otherwise park it (may be discarded)."""
+        nonlocal assistant_text, held_text
+        if not text:
+            return None
+        if active_subagents:
+            # Nested gatherer/verifier tokens — never show in the chat bubble
+            return None
+        if answer_mode:
+            assistant_text += text
+            return _sse({"type": "text", "content": text})
+        held_text += text
+        return None
+
+    def _current_via(event: dict) -> str:
+        tagged = _event_subagent_name(event)
+        if tagged:
+            return tagged
+        if active_subagents:
+            return str(active_subagents[-1].get("type") or "")
+        return ""
 
     try:
         async for event in graph.astream_events(
@@ -298,17 +376,23 @@ async def stream_chat(
                 chunk = data.get("chunk")
                 if chunk is None:
                     continue
+                # Nested subagent streams also have lc_agent_name — suppress even
+                # if our stack briefly drifted.
+                if _event_subagent_name(event) or active_subagents:
+                    continue
                 text = _content_to_text(getattr(chunk, "content", None))
-                if text:
-                    assistant_text += text
-                    yield _sse({"type": "text", "content": text})
-                    # Don't flush every token — batch is fine for text; tools need flush
+                payload = _hold_or_stream_text(text)
+                if payload is not None:
+                    yield payload
 
             elif kind == "on_tool_start":
                 run_id = str(event.get("run_id") or uuid.uuid4())
                 name = event.get("name") or "tool"
                 tool_input = data.get("input")
-                tool_buffers[run_id] = {"name": name, "input": tool_input}
+                # Preserve synthesize draft; drop ephemeral pre-tool chatter
+                if held_text.strip():
+                    draft_text = held_text.strip()
+                held_text = ""
 
                 # Plan updates go to the Plan panel only — not execution steps
                 if name == "write_todos":
@@ -338,27 +422,75 @@ async def stream_chat(
                     continue
 
                 ui = describe_tool_start(name, tool_input)
-                logger.info("stream_chat tool_start %s", name)
-                yield _sse(
-                    {
-                        "type": "tool_start",
-                        "tool_run_id": run_id,
-                        "tool_name": name,
-                        "name": name,
-                        "label": ui["label"],
-                        "detail": ui.get("detail") or "",
-                        "category": ui.get("category") or "tool",
-                    }
+                via = _current_via(event)
+                if name == "task":
+                    sub = (
+                        ui.get("subagent")
+                        or ui.get("category")
+                        or _event_subagent_name(event)
+                        or "subagent"
+                    )
+                    active_subagents.append({"run_id": run_id, "type": sub})
+                    via = ""  # the subagent step itself is not "via" itself
+
+                tool_buffers[run_id] = {
+                    "name": name,
+                    "input": tool_input,
+                    "via": via,
+                    "is_subagent": name == "task",
+                    "subagent": (ui.get("subagent") or "") if name == "task" else "",
+                }
+
+                logger.info(
+                    "stream_chat tool_start %s%s",
+                    name,
+                    f" via={via}" if via else "",
                 )
+                payload = {
+                    "type": "tool_start",
+                    "tool_run_id": run_id,
+                    "tool_name": name,
+                    "name": name,
+                    "label": ui["label"],
+                    "detail": ui.get("detail") or "",
+                    "category": ui.get("category") or "tool",
+                }
+                if via:
+                    payload["via"] = via
+                yield _sse(payload)
                 await _flush()
 
             elif kind == "on_tool_end":
                 run_id = str(event.get("run_id") or "")
                 output = data.get("output")
-                output_text = _content_to_text(getattr(output, "content", output))
+                try:
+                    output_text = _content_to_text(getattr(output, "content", output))
+                except Exception:
+                    output_text = ""
                 meta = tool_buffers.get(run_id, {})
                 name = meta.get("name") or event.get("name") or "tool"
                 tool_input = meta.get("input")
+
+                # Subagents (task) sometimes end with a mismatched run_id —
+                # only fall back among STILL-OPEN task buffers (never a closed one).
+                if not meta and name == "task":
+                    open_ids = {s["run_id"] for s in active_subagents}
+                    for rid, buf in reversed(list(tool_buffers.items())):
+                        if buf.get("name") == "task" and rid in open_ids:
+                            run_id = rid
+                            meta = buf
+                            tool_input = buf.get("input")
+                            name = "task"
+                            break
+                elif not meta and name:
+                    for rid, buf in reversed(list(tool_buffers.items())):
+                        if buf.get("name") == name:
+                            run_id = rid
+                            meta = buf
+                            tool_input = buf.get("input")
+                            break
+                if not run_id:
+                    run_id = str(uuid.uuid4())
 
                 if name == "write_todos":
                     # Prefer end payload — start events often have empty args
@@ -370,6 +502,7 @@ async def stream_chat(
                     if todos is not None:
                         async for chunk in _emit_todos(todos):
                             yield chunk
+                    tool_buffers.pop(run_id, None)
                     continue
 
                 if name == "cite_sources":
@@ -390,7 +523,12 @@ async def stream_chat(
                             }
                         )
                         await _flush()
+                    tool_buffers.pop(run_id, None)
                     continue
+
+                # Prefer end-event input when start args were empty (common)
+                if data.get("input"):
+                    tool_input = data.get("input")
 
                 # Only auto-ingest when a tool already returned a citations/sources field
                 if name not in {
@@ -424,31 +562,64 @@ async def stream_chat(
                         await _flush()
 
                 ui = describe_tool_end(name, tool_input, output_text)
-                yield _sse(
-                    {
-                        "type": "tool_end",
-                        "tool_run_id": run_id,
-                        "tool_name": name,
-                        "label": ui["label"],
-                        "detail": ui.get("detail") or "",
-                        "summary": ui.get("summary") or "",
-                        "category": ui.get("category") or "tool",
-                    }
-                )
+                via = meta.get("via") or _event_subagent_name(event) or ""
+                if name == "task":
+                    sub = (
+                        meta.get("subagent")
+                        or ui.get("subagent")
+                        or ui.get("category")
+                        or ""
+                    )
+                    # Only pop the matching open subagent — never the "latest" on
+                    # a mismatched run_id (that prematurely untagged nested tools).
+                    closed = False
+                    for i in range(len(active_subagents) - 1, -1, -1):
+                        if active_subagents[i]["run_id"] == run_id:
+                            sub = active_subagents[i].get("type") or sub
+                            active_subagents.pop(i)
+                            closed = True
+                            break
+                    if not closed and len(active_subagents) == 1:
+                        # Single open task + unmatched id → still close it
+                        sub = active_subagents[0].get("type") or sub
+                        active_subagents.pop()
+                        closed = True
+                    via = ""
+                    # After verifier, subsequent parent tokens are the user-facing answer
+                    if str(sub).lower() == "verifier":
+                        answer_mode = True
+                        held_text = ""
+
+                end_payload = {
+                    "type": "tool_end",
+                    "tool_run_id": run_id,
+                    "tool_name": name,
+                    "label": ui["label"],
+                    "detail": ui.get("detail") or "",
+                    "summary": ui.get("summary") or "",
+                    "category": ui.get("category") or "tool",
+                }
+                if via:
+                    end_payload["via"] = via
+                yield _sse(end_payload)
                 await _flush()
-                store.append_message(
-                    {
-                        "thread_id": thread_id,
-                        "role": "tool",
-                        "content": output_text[:4000],
-                        "tool_call_id": run_id,
-                        "additional_kwargs": {
-                            "tool_name": name,
-                            "label": ui["label"],
-                            "category": ui.get("category"),
-                        },
-                    }
-                )
+                tool_buffers.pop(run_id, None)
+                try:
+                    store.append_message(
+                        {
+                            "thread_id": thread_id,
+                            "role": "tool",
+                            "content": (output_text or "")[:4000],
+                            "tool_call_id": run_id,
+                            "additional_kwargs": {
+                                "tool_name": name,
+                                "label": ui["label"],
+                                "category": ui.get("category"),
+                            },
+                        }
+                    )
+                except Exception:
+                    logger.exception("failed to persist tool message for %s", name)
 
             elif kind == "on_chat_model_end":
                 # Capture write_todos / cite_sources from tool_call args when
@@ -492,14 +663,31 @@ async def stream_chat(
         # Fallback: read todos from compiled state after the run
         try:
             final_state = await graph.aget_state(config)
-            state_todos = (final_state.values or {}).get("todos") if final_state else None
+            values = (final_state.values or {}) if final_state else {}
+            state_todos = values.get("todos")
             if state_todos:
                 parsed = _extract_todos({"todos": state_todos})
                 if parsed:
                     async for chunk in _emit_todos(parsed):
                         yield chunk
+            # Recover answer if streaming gates dropped it (common after verifier)
+            if not assistant_text.strip():
+                recovered = (
+                    held_text.strip()
+                    or draft_text.strip()
+                    or _last_final_ai_text(values.get("messages") or [])
+                )
+                if recovered:
+                    assistant_text = recovered
+                    yield _sse({"type": "text", "content": recovered})
+                    await _flush()
         except Exception:
-            pass
+            if not assistant_text.strip() and (held_text.strip() or draft_text.strip()):
+                assistant_text = held_text.strip() or draft_text.strip()
+                yield _sse({"type": "text", "content": assistant_text})
+                await _flush()
+
+        held_text = ""
 
     except Exception as exc:
         err = str(exc)

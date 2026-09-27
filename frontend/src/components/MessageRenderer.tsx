@@ -235,6 +235,28 @@ const PlanChecklist = ({ todos }: { todos: TodoItem[] }) => {
     );
 };
 
+const ViaBadge = ({ via }: { via?: string }) => {
+    if (!via) return null;
+    const label = via === 'verifier' || via === 'gatherer'
+        ? via
+        : via.replace(/_/g, ' ');
+    return (
+        <span style={{
+            marginLeft: 6,
+            fontSize: 10,
+            fontWeight: 500,
+            color: 'var(--color-text-tertiary)',
+            background: 'var(--color-surface-hover)',
+            borderRadius: 3,
+            padding: '1px 5px',
+            textTransform: 'lowercase',
+            whiteSpace: 'nowrap',
+        }}>
+            via {label}
+        </span>
+    );
+};
+
 // Finished tools fold into expandable; currently-running tools stay visible
 const ToolsGroup = ({
     steps,
@@ -283,6 +305,7 @@ const ToolsGroup = ({
                                     icon={stepIcon(step, true)}
                                     title={step.text}
                                     detail={step.detail}
+                                    via={step.via}
                                 />
                             ))}
                         </div>
@@ -296,6 +319,7 @@ const ToolsGroup = ({
                     icon={stepIcon(step)}
                     title={step.text}
                     detail={step.detail}
+                    via={step.via}
                 />
             ))}
         </div>
@@ -306,11 +330,13 @@ const TimelineRow = ({
     icon,
     title,
     detail,
+    via,
     muted,
 }: {
     icon: ReactNode;
     title: string;
     detail?: string;
+    via?: string;
     muted?: boolean;
 }) => (
     <div style={{
@@ -327,8 +353,12 @@ const TimelineRow = ({
             <div style={{
                 color: muted ? 'var(--color-text-secondary)' : 'var(--color-text)',
                 lineHeight: 1.4,
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
             }}>
-                {title}
+                <span>{title}</span>
+                <ViaBadge via={via} />
             </div>
             {detail ? (
                 <div style={{
@@ -368,11 +398,23 @@ const UnifiedReasoningDisplay = ({
     const isPrep = (s: ReasoningStep) =>
         s.category === 'prep' || s.id === 'prep';
     const isPlanStep = (s: ReasoningStep) =>
-        s.id === 'tool-planning';
+        s.id === 'tool-planning' || s.category === 'plan';
+    // Gatherer / verifier / other task→subagent — first-class steps, not tools
+    const isSubagentStep = (s: ReasoningStep) =>
+        s.category === 'verifier'
+        || s.category === 'gatherer'
+        || s.category === 'subagent';
+    // Actual model tool calls (prep/plan/subagents are separate). Name+params from SSE.
+    const isRealTool = (s: ReasoningStep) =>
+        !isPrep(s) && !isPlanStep(s) && !isSubagentStep(s) && (s.category || 'tool') !== 'status';
 
     const prepSteps = agentSteps.filter(isPrep);
     const planningSteps = agentSteps.filter(isPlanStep);
-    const toolSteps = agentSteps.filter((s) => !isPrep(s) && !isPlanStep(s));
+    // Preserve stream order for subagent + tool interleaving
+    const workSteps = agentSteps.filter((s) => isSubagentStep(s) || isRealTool(s));
+    const otherSteps = agentSteps.filter(
+        (s) => !isPrep(s) && !isPlanStep(s) && !isSubagentStep(s) && !isRealTool(s)
+    );
 
     const collapsedBits: string[] = [];
     if (prepSteps.length) collapsedBits.push(prepSteps[0].text);
@@ -380,9 +422,14 @@ const UnifiedReasoningDisplay = ({
         const done = planItems.filter((t) => t.status === 'completed').length;
         collapsedBits.push(`${done}/${planItems.length} done`);
     }
-    if (toolSteps.length) {
+    const gathererN = workSteps.filter((s) => s.category === 'gatherer').length;
+    const verifierN = workSteps.filter((s) => s.category === 'verifier').length;
+    if (gathererN) collapsedBits.push(gathererN === 1 ? 'gatherer' : `${gathererN} gatherers`);
+    if (verifierN) collapsedBits.push(verifierN === 1 ? 'verifier' : `${verifierN} verifiers`);
+    const toolOnly = workSteps.filter(isRealTool);
+    if (toolOnly.length) {
         collapsedBits.push(
-            toolSteps.length === 1 ? '1 tool called' : `${toolSteps.length} tools called`
+            toolOnly.length === 1 ? '1 tool called' : `${toolOnly.length} tools called`
         );
     }
 
@@ -403,6 +450,8 @@ const UnifiedReasoningDisplay = ({
         );
     };
 
+    // Build body in stream order: after plan, emit contiguous tool batches +
+    // each gatherer/verifier as its own step (tools that ran via them keep via=).
     const bodyRows: ReactNode[] = [];
     prepSteps.forEach((step) => {
         bodyRows.push(
@@ -428,11 +477,49 @@ const UnifiedReasoningDisplay = ({
     if (planItems.length) {
         bodyRows.push(<PlanChecklist key="plan-checklist" todos={planItems} />);
     }
-    if (toolSteps.length) {
+    otherSteps.forEach((step) => {
         bodyRows.push(
-            <ToolsGroup key="tools-group" steps={toolSteps} stepIcon={stepIcon} />
+            <TimelineRow
+                key={step.id}
+                muted
+                icon={stepIcon(step, true)}
+                title={step.text}
+                detail={step.detail}
+            />
         );
-    }
+    });
+
+    // Walk workSteps: batch consecutive real tools into ToolsGroup; emit
+    // gatherer/verifier as standalone rows when they appear.
+    let toolBatch: ReasoningStep[] = [];
+    let batchKey = 0;
+    const flushTools = () => {
+        if (!toolBatch.length) return;
+        bodyRows.push(
+            <ToolsGroup
+                key={`tools-group-${batchKey++}`}
+                steps={toolBatch}
+                stepIcon={stepIcon}
+            />
+        );
+        toolBatch = [];
+    };
+    workSteps.forEach((step) => {
+        if (isSubagentStep(step)) {
+            flushTools();
+            bodyRows.push(
+                <TimelineRow
+                    key={step.id}
+                    icon={stepIcon(step)}
+                    title={step.text}
+                    detail={step.detail}
+                />
+            );
+        } else {
+            toolBatch.push(step);
+        }
+    });
+    flushTools();
 
     return (
         <div style={{ marginBottom: 12 }}>

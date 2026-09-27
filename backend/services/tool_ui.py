@@ -1,11 +1,9 @@
-"""Human-friendly labels/summaries for tool activity shown in the chat UI."""
+"""Format tool activity for the chat UI — tool name + params, with subagent labels."""
 
 from __future__ import annotations
 
 import json
-import re
-from pathlib import PurePosixPath
-from typing import Any, Optional
+from typing import Any
 
 
 def _as_dict(value: Any) -> dict:
@@ -20,220 +18,86 @@ def _as_dict(value: Any) -> dict:
     return {}
 
 
-def _short(text: str, n: int = 72) -> str:
-    text = re.sub(r"\s+", " ", (text or "").strip())
-    if len(text) <= n:
+def _format_params(tool_input: Any, *, max_len: int = 240) -> str:
+    """Compact params string for the timeline (no tool output)."""
+    if tool_input is None:
+        return ""
+    if isinstance(tool_input, str):
+        text = tool_input.strip()
+        return text if len(text) <= max_len else text[: max_len - 1] + "…"
+    inp = _as_dict(tool_input)
+    if not inp:
+        try:
+            text = json.dumps(tool_input, default=str, ensure_ascii=False)
+        except Exception:
+            text = str(tool_input)
+        text = text.strip()
+        return text if len(text) <= max_len else text[: max_len - 1] + "…"
+    try:
+        text = json.dumps(inp, default=str, ensure_ascii=False, separators=(",", ": "))
+    except Exception:
+        text = str(inp)
+    if len(text) <= max_len:
         return text
-    return text[: n - 1] + "…"
+    return text[: max_len - 1] + "…"
 
 
-def _agent_display_name(agent_id: str) -> str:
-    try:
-        from mcp_servers import AGENT_CATALOG
+def _task_subagent_type(tool_input: Any) -> str:
+    inp = _as_dict(tool_input)
+    # LangChain sometimes nests args under "input" / "args"
+    nested = _as_dict(inp.get("input") or inp.get("args") or {})
+    sub = (
+        inp.get("subagent_type")
+        or inp.get("agent")
+        or nested.get("subagent_type")
+        or nested.get("agent")
+        or inp.get("name")
+        or ""
+    )
+    return str(sub).strip().lower()
 
-        for row in AGENT_CATALOG:
-            if row["id"] == agent_id:
-                return row["name"]
-    except Exception:
-        pass
-    return agent_id
+
+def _task_description(tool_input: Any) -> str:
+    inp = _as_dict(tool_input)
+    nested = _as_dict(inp.get("input") or inp.get("args") or {})
+    return str(
+        inp.get("description") or nested.get("description") or ""
+    ).strip()
 
 
-def _skill_name_from_path(path: str) -> Optional[str]:
-    # /skills/search/SKILL.md → search
-    try:
-        parts = PurePosixPath(path.replace("\\", "/")).parts
-        if "skills" in parts:
-            i = parts.index("skills")
-            if i + 1 < len(parts):
-                return parts[i + 1]
-    except Exception:
-        pass
-    return None
+_SUBAGENT_LABELS = {
+    "verifier": "Verifier",
+    "gatherer": "Gatherer",
+}
 
 
 def describe_tool_start(name: str, tool_input: Any) -> dict[str, str]:
-    """Return label/detail/category for a tool_start event."""
-    inp = _as_dict(tool_input)
-    raw = tool_input if isinstance(tool_input, str) else ""
-
-    if name == "write_todos":
-        todos = inp.get("todos") if isinstance(inp.get("todos"), list) else []
-        n = len(todos)
-        return {
-            "category": "plan",
-            "label": "Updating plan",
-            "detail": f"{n} step{'s' if n != 1 else ''}" if n else "Organizing work",
-        }
-
+    """label/detail/category for a tool_start event."""
     if name == "task":
-        sub = str(
-            inp.get("subagent_type")
-            or inp.get("agent")
-            or inp.get("name")
-            or ""
-        ).strip()
-        desc = _short(str(inp.get("description") or ""), 60)
-        if sub in {"gatherer", "researcher"}:
+        sub = _task_subagent_type(tool_input)
+        desc = _task_description(tool_input)
+        if sub in _SUBAGENT_LABELS:
             return {
-                "category": "subagent",
-                "label": "Gathering evidence",
-                "detail": desc or "Using enabled agents",
-            }
-        if sub == "verifier":
-            return {
-                "category": "subagent",
-                "label": "Verifying",
-                "detail": desc or "Checking claims",
-            }
-        if sub == "general-purpose":
-            return {
-                "category": "subagent",
-                "label": "Running subagent",
-                "detail": desc or "general-purpose",
+                "category": sub,
+                "label": _SUBAGENT_LABELS[sub],
+                "detail": desc,
+                "subagent": sub,
             }
         return {
             "category": "subagent",
-            "label": f"Delegating to {sub}" if sub else "Running subagent",
+            "label": (sub or "subagent").replace("_", " ").title(),
             "detail": desc,
+            "subagent": sub or "subagent",
         }
-
-    # DeepAgents filesystem / skill reads
-    if name in {"read_file", "read_file_tool", "ReadFile"} or name.endswith("read_file"):
-        path = str(inp.get("file_path") or inp.get("path") or inp.get("file") or raw or "")
-        skill = _skill_name_from_path(path)
-        if skill or "/skills/" in path or "SKILL.md" in path:
-            agent = _agent_display_name(skill) if skill else "agent"
-            if skill == "research":
-                agent = "Research"
-            return {
-                "category": "skill",
-                "label": f"Loading SKILLS for {agent}",
-                "detail": agent,
-            }
-        return {
-            "category": "files",
-            "label": "Reading a file",
-            "detail": _short(path) if path else "",
-        }
-
-    if name in {"ls", "list_files", "glob"} or name.endswith("__ls"):
-        return {"category": "files", "label": "Checking files", "detail": ""}
-
-    if name in {"write_file", "edit_file"}:
-        return {"category": "files", "label": "Updating a file", "detail": ""}
-
-    # MCP agents: agent__tool
-    if "__" in name:
-        agent, tool = name.split("__", 1)
-        if agent == "search" or tool == "search":
-            q = str(inp.get("query") or raw or "")
-            return {
-                "category": "search",
-                "label": "Searching the web",
-                "detail": _short(q, 80) if q else "Looking up current information",
-            }
-        if agent == "calculator":
-            expr = str(
-                inp.get("expression")
-                or inp.get("a", "")
-                or raw
-                or tool.replace("_", " ")
-            )
-            return {
-                "category": "calculator",
-                "label": "Calculating",
-                "detail": _short(str(expr)) if expr else tool.replace("_", " "),
-            }
-        if agent == "weather":
-            city = str(inp.get("city") or raw or "")
-            return {
-                "category": "weather",
-                "label": "Checking weather",
-                "detail": city or "Looking up conditions",
-            }
-        if agent == "datetime":
-            return {
-                "category": "datetime",
-                "label": "Checking date & time",
-                "detail": tool.replace("_", " "),
-            }
-        return {
-            "category": "tool",
-            "label": f"Using {agent}",
-            "detail": tool.replace("_", " "),
-        }
-
-    # fallbacks
-    if "search" in name.lower():
-        q = str(inp.get("query") or "")
-        return {"category": "search", "label": "Searching the web", "detail": _short(q)}
 
     return {
         "category": "tool",
-        "label": "Working",
-        "detail": name.replace("_", " "),
+        "label": name or "tool",
+        "detail": _format_params(tool_input),
     }
 
 
-def describe_tool_end(name: str, tool_input: Any, output: Any) -> dict[str, str]:
-    """Return friendly completion label/summary — never dump raw payloads."""
+def describe_tool_end(name: str, tool_input: Any, output: Any = None) -> dict[str, str]:
+    """Same as start — do not surface tool response on the timeline."""
     start = describe_tool_start(name, tool_input)
-    out_text = output if isinstance(output, str) else json.dumps(output, default=str)
-    out_dict = _as_dict(output)
-
-    if start["category"] == "plan":
-        return {**start, "label": "Updated plan", "summary": start.get("detail") or ""}
-
-    if start["category"] == "subagent":
-        label = start["label"]
-        if label == "Gathering evidence":
-            done = "Gathered evidence"
-        elif label == "Verifying":
-            done = "Verified"
-        elif label == "Running subagent":
-            done = "Subagent finished"
-        elif label.startswith("Delegating"):
-            done = "Delegated"
-        elif label.endswith("ing"):
-            done = label[:-3] + "ed"
-        else:
-            done = label
-        return {**start, "label": done, "summary": ""}
-
-    if start["category"] == "skill":
-        agent = start.get("detail") or "agent"
-        return {
-            **start,
-            "label": f"Loaded SKILLS for {agent}",
-            "summary": "",
-        }
-
-    if start["category"] == "search":
-        if out_dict.get("status") == "error" or out_text.startswith('{"status": "error"'):
-            err = out_dict.get("error") or "Search failed"
-            return {**start, "label": "Search failed", "summary": _short(str(err), 100)}
-        cites = out_dict.get("citations") or []
-        n = len(cites) if isinstance(cites, list) else 0
-        summary = f"Found {n} source{'s' if n != 1 else ''}" if n else "Got an answer"
-        return {**start, "label": "Searched the web", "summary": summary}
-
-    if start["category"] == "calculator":
-        if isinstance(out_dict, dict) and "error" in str(out_text).lower()[:40]:
-            return {**start, "label": "Calculation failed", "summary": "Couldn't evaluate that"}
-        # Prefer a short numeric/result peek without dumping
-        preview = _short(out_text, 40)
-        if preview.startswith("{") or preview.startswith("["):
-            preview = "Got a result"
-        return {**start, "label": "Calculated", "summary": preview}
-
-    if start["category"] == "weather":
-        return {**start, "label": "Got weather", "summary": _short(out_text, 60) or "Updated"}
-
-    if start["category"] == "datetime":
-        return {**start, "label": "Got date & time", "summary": "Updated"}
-
-    if start["category"] == "files":
-        return {**start, "label": start["label"].replace("Reading", "Read").replace("Checking", "Checked"), "summary": ""}
-
-    return {**start, "label": "Done", "summary": ""}
+    return {**start, "summary": ""}

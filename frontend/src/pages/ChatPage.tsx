@@ -245,10 +245,11 @@ const ChatPage = () => {
             const idx = steps.findIndex((s) => s.id === id);
             const step = {
               id,
-              text: chunk.label || `Using ${chunk.tool_name || chunk.name || 'tool'}`,
+              text: chunk.label || chunk.tool_name || chunk.name || 'tool',
               detail: chunk.detail,
               status: 'running' as const,
               category: chunk.category || (chunk.tool_run_id === 'planning' ? 'plan' : 'tool'),
+              via: chunk.via,
             };
             if (idx >= 0) steps[idx] = step;
             else steps.push(step);
@@ -260,10 +261,12 @@ const ChatPage = () => {
             const idx = steps.findIndex((s) => s.id === id);
             const step = {
               id,
-              text: chunk.label || steps[idx]?.text || 'Done',
-              detail: (idx >= 0 ? steps[idx].detail : undefined) || chunk.detail,
+              text: chunk.label || chunk.tool_name || steps[idx]?.text || 'tool',
+              // Prefer end-event params (start often has empty args)
+              detail: chunk.detail || (idx >= 0 ? steps[idx].detail : undefined),
               status: 'complete' as const,
               category: chunk.category || steps[idx]?.category || 'tool',
+              via: chunk.via || (idx >= 0 ? steps[idx].via : undefined),
             };
             // Upsert — never drop a completed tool if start was missed
             if (idx >= 0) steps[idx] = step;
@@ -273,8 +276,12 @@ const ChatPage = () => {
             textContent += chunk.content || '';
             pushSteps(true);
           } else if (chunk.type === 'done') {
+            // Mark leftovers complete — do NOT drop them (task/subagents often
+            // finish without a matched tool_end run_id, and splicing hid real calls).
             steps.forEach((s, i) => {
-              if (s.status === 'running') steps[i] = { ...s, status: 'complete' };
+              if (s.status === 'running') {
+                steps[i] = { ...s, status: 'complete' };
+              }
             });
             if (chunk.todos?.length) {
               todos = chunk.todos.map((t) => ({

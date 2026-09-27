@@ -16,6 +16,8 @@ export interface ReasoningStep {
     detail?: string;
     status: 'pending' | 'running' | 'complete' | 'failed';
     category?: string;
+    /** When set, this tool ran inside a subagent (e.g. verifier / gatherer). */
+    via?: string;
 }
 
 export interface Attachment {

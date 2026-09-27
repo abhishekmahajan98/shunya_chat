@@ -18,6 +18,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from agents.deep_agent.tools import TOOLS
 from agents.model import Context, configurable_model, dynamic_system_prompt
 from agents.skills_loader import BACKEND_DIR
+from config import settings
 from services.citations import cite_sources
 
 _SYSTEM_PROMPT = """You are a capable multi-step assistant.
@@ -32,20 +33,34 @@ The todo plan is the backbone of the turn:
 3. Mark exactly one item in_progress. As each step finishes, call write_todos
    again immediately to mark it completed and advance the next — do not leave
    the whole list pending until the end.
-4. Gather with enabled agents/tools. Prefer calling calculator__/search__/etc.
-   tools DIRECTLY; use task→gatherer only for large multi-tool batches.
+4. Gather ONE plan step at a time. Prefer task→gatherer for the single
+   in_progress gather todo (pass only that step's text — never pack later
+   todos into the same gatherer call). When gatherer returns: write_todos
+   (mark it completed, next gather step in_progress), then call gatherer
+   again for the next gather step. Repeat until gather todos are done.
 5. Synthesize from evidence only (tool results), not training-data guesses.
-6. Verify contested claims (prefer task→verifier when useful).
-7. cite_sources, mark ALL todos completed, then write the final answer.
+   Do NOT call verifier until gather (and synthesize) for this turn are done.
+6. REQUIRED: call task with subagent_type="verifier" after gathering/synthesizing.
+   Do this before cite_sources and before the final answer. Never skip verify.
+7. AFTER verifier returns: write the complete user-facing final answer in your
+   own voice (do not stop at cite_sources / write_todos alone). Then cite_sources
+   and mark ALL todos completed.
 
 Rules:
-- Your tool list is authoritative. If a calculator__/search__/weather__/datetime__
-  tool (or task) is listed, you HAVE it — never claim a tool is unavailable.
-- Prefer tools over guessing when a relevant tool is available.
+- Your tool list is authoritative. If a tool (or task) is listed, you HAVE it —
+  never claim it is unavailable.
+- Prefer enabled tools over guessing when they can answer the question.
+- Use EVERY enabled agent family the question needs across the gather loop
+  (e.g. calculator on step 1 via gatherer, search on step 2 via gatherer).
+  One calculator call does not finish a research todo.
 - Most tools do NOT return a citations key — use cite_sources.
 - Read and follow skills when listed.
 - Do not give the final answer while any todo is still pending/in_progress.
-- For truly trivial one-step asks only, you may skip the full loop.
+- Do not give the final answer until task→verifier has run this turn.
+- When the task tool is the only allowed choice after gather, you MUST use
+  subagent_type="verifier" (not gatherer).
+- For truly trivial one-step asks only, you may skip gather — but verifier is
+  still required unless the runtime did not expose the task tool.
 """
 
 _TODO_SYSTEM_PROMPT = """## write_todos (required backbone)
@@ -57,11 +72,12 @@ You MUST maintain a todo list for this turn.
 - Include the subject matter in each item (who/what/which claim), not vague labels.
 - Cover gather → synthesize → verify (split gather/verify into multiple specific
   items when the question has several parts).
+- Include an explicit verify step that will be done via task→verifier.
 - First plan: statuses are pending or exactly one in_progress. Do NOT mark
   anything completed until tools have finished that step.
 - Bad: "Gather evidence", "Synthesize answer", "Verify claims"
-- Good: "Search LangGraph skills= parameter docs", "Draft comparison of X vs Y",
-  "Re-check the pricing claim with a second search"
+- Good: "Look up current docs for X API parameter", "Draft comparison of X vs Y",
+  "Verify pricing claim via task→verifier"
 
 ### Updating as you work
 - Exactly one item in_progress at a time.
@@ -70,25 +86,44 @@ You MUST maintain a todo list for this turn.
 - Revise the list if new sub-tasks appear.
 
 ### Finishing
-- Before the final user-facing answer, every todo must be completed.
+- Before the final user-facing answer: task→verifier must have run, and every
+  todo must be completed.
 - Call write_todos at most once per model turn (never in parallel).
 """
 
-_GATHERER_PROMPT = """You are a gatherer subagent. Collect evidence using only the tools you have.
+_GATHERER_PROMPT = """You are a gatherer subagent. Your job is to collect evidence for
+ONE delegated plan step only (the description you were given).
 
-- Call the relevant enabled tools (whatever they are — search, calc, weather, etc.).
-- Return a structured brief: what you found, key values, and any sources/ids.
-- Do not write the final user-facing answer.
-- If you lack a tool needed for the question, say what's missing — don't fake it.
+Before calling anything:
+1. Inventory EVERY tool in your tool list (names + what each can do).
+2. Map THIS step only to which tools are relevant — ignore other plan steps.
+3. Use every relevant tool family for this step; skip tools that do not help it.
+4. Do NOT use filesystem tools (glob/ls/grep/read/write) unless the step is
+   explicitly about local files. Never glob "*".
+
+While working:
+- Prefer direct tool calls over guessing or relying on prior knowledge.
+- If several tools apply to THIS step, call them and combine results.
+- Return a structured brief: what you found, key values, which tools you used,
+  and any sources/ids.
+- Do not work on later todos, synthesize, verify, or write the final answer.
+- If a needed capability is missing from your tool list, say what is missing —
+  do not fake it.
 """
 
-_VERIFIER_PROMPT = """You are a verifier subagent. Challenge a draft using only the tools you have.
+_VERIFIER_PROMPT = """You are a verifier subagent. Challenge an EXISTING draft —
+do not perform primary research or fill in work the gatherer skipped.
 
-- Re-check contested claims with the same class of tools used to gather evidence.
-- Return: confirmed points, disputed points, gaps, and suggested fixes.
-- Do not assume web search exists. If only calc/weather/etc. are available, verify
-  with those (recompute, re-fetch, cross-check).
-- Do not rewrite the full answer unless a critical error must be corrected.
+Hard limits:
+- At most 3 tool calls total for this entire verification.
+- For math: ONE recalculation of the claimed expression is enough — do not
+  re-derive with multiply/add/divide/subtract variants.
+- For facts: at most ONE or TWO targeted re-fetches of specific claims already
+  in the draft. No broad new research queries.
+- Do NOT use filesystem tools (glob/ls/read/write). Do NOT explore the repo.
+
+Return: confirmed points, disputed points, gaps, and suggested fixes.
+Do not rewrite the full user-facing answer.
 """
 
 
@@ -137,14 +172,19 @@ def _domain_agent_id(name: str | None) -> str | None:
     return name.split("__", 1)[0]  # type: ignore[union-attr]
 
 
+def _state_messages(state: Any) -> list:
+    if state is None:
+        return []
+    if isinstance(state, dict):
+        messages = state.get("messages") or []
+    else:
+        messages = getattr(state, "messages", None) or []
+    return list(messages) if isinstance(messages, list) else []
+
+
 def _used_domain_agents(state: Any) -> set[str]:
     used: set[str] = set()
-    if state is None:
-        return used
-    messages = state.get("messages") if isinstance(state, dict) else getattr(state, "messages", None)
-    if not messages:
-        return used
-    for msg in messages:
+    for msg in _state_messages(state):
         name = getattr(msg, "name", None)
         agent = _domain_agent_id(name)
         if agent:
@@ -157,14 +197,202 @@ def _used_domain_agents(state: Any) -> set[str]:
     return used
 
 
-def _todos_all_completed(todos: list) -> bool:
+def _task_args(tc: Any) -> dict:
+    if isinstance(tc, dict):
+        args = tc.get("args") or tc.get("arguments") or {}
+    else:
+        args = getattr(tc, "args", None) or {}
+    return args if isinstance(args, dict) else {}
+
+
+def _task_subagent_types_used(state: Any) -> set[str]:
+    """Which task(subagent_type=…) values have been invoked this turn."""
+    used: set[str] = set()
+    for msg in _state_messages(state):
+        for tc in getattr(msg, "tool_calls", None) or []:
+            tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+            if tc_name != "task":
+                continue
+            args = _task_args(tc)
+            sub = (
+                args.get("subagent_type")
+                or args.get("agent")
+                or args.get("name")
+                or ""
+            )
+            sub = str(sub).strip().lower()
+            if sub:
+                used.add(sub)
+    return used
+
+
+def _verifier_used(state: Any) -> bool:
+    return "verifier" in _task_subagent_types_used(state)
+
+
+def _gatherer_used(state: Any) -> bool:
+    return "gatherer" in _task_subagent_types_used(state)
+
+
+def _any_domain_tool_used(state: Any) -> bool:
+    return bool(_used_domain_agents(state))
+
+
+def _enabled_domain_agents(tools: Sequence[Any] | None) -> set[str]:
+    agents: set[str] = set()
+    for t in tools or []:
+        agent = _domain_agent_id(_tool_name(t))
+        if agent:
+            agents.add(agent)
+    return agents
+
+
+def _is_verify_todo(todo: Any) -> bool:
+    if not isinstance(todo, dict):
+        return False
+    content = str(todo.get("content") or "").lower()
+    return "verif" in content
+
+
+def _is_synthesize_todo(todo: Any) -> bool:
+    if not isinstance(todo, dict):
+        return False
+    content = str(todo.get("content") or "").lower()
+    return any(
+        k in content
+        for k in ("synthes", "draft", "compile", "write the answer", "write answer")
+    )
+
+
+def _is_gather_todo(todo: Any) -> bool:
+    """Anything that is not synthesize / verify / cite is gather work."""
+    if not isinstance(todo, dict):
+        return False
+    if _is_verify_todo(todo) or _is_synthesize_todo(todo):
+        return False
+    content = str(todo.get("content") or "").lower()
+    if "cite" in content or content.startswith("record source"):
+        return False
+    return True
+
+
+def _in_progress_todo(state: Any) -> dict | None:
+    for t in _state_todos(state):
+        if isinstance(t, dict) and t.get("status") == "in_progress":
+            return t
+    return None
+
+
+def _outstanding_gather_todos(state: Any) -> list[dict]:
+    out: list[dict] = []
+    for t in _state_todos(state):
+        if not _is_gather_todo(t):
+            continue
+        if (t.get("status") or "pending") != "completed":
+            out.append(t)
+    return out
+
+
+def _todo_content(todo: dict | None) -> str:
+    if not todo:
+        return ""
+    return str(todo.get("content") or "").strip()
+
+
+def _last_tool_action(state: Any) -> str | None:
+    """Most recent tool action: write_todos | gatherer | verifier | domain | other."""
+    for msg in reversed(_state_messages(state)):
+        for tc in getattr(msg, "tool_calls", None) or []:
+            tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+            if tc_name == "write_todos":
+                return "write_todos"
+            if tc_name == "task":
+                args = _task_args(tc)
+                sub = str(
+                    args.get("subagent_type")
+                    or args.get("agent")
+                    or args.get("name")
+                    or ""
+                ).strip().lower()
+                if sub in {"gatherer", "verifier"}:
+                    return sub
+                return "task"
+            if _is_domain_tool_name(tc_name):
+                return "domain"
+            if tc_name:
+                return "other"
+        name = getattr(msg, "name", None)
+        if name == "write_todos":
+            return "write_todos"
+        if name == "task":
+            # ToolMessage for task — treat as gatherer if that was last subagent used
+            # Prefer AIMessage tool_calls above; this is a fallback.
+            used = _task_subagent_types_used(state)
+            if "verifier" in used and "gatherer" not in used:
+                return "verifier"
+            if "gatherer" in used:
+                return "gatherer"
+            return "task"
+        if _is_domain_tool_name(name):
+            return "domain"
+    return None
+
+
+def _non_verify_todos_complete(state: Any) -> bool:
+    """True when every todo that is not a verify step is completed."""
+    todos = _state_todos(state)
     if not todos:
         return False
-    for t in todos:
-        status = t.get("status") if isinstance(t, dict) else getattr(t, "status", None)
-        if status != "completed":
+    outstanding = [
+        t for t in todos
+        if not _is_verify_todo(t) and (t.get("status") or "pending") != "completed"
+    ]
+    return not outstanding
+
+
+def _ready_for_verifier(state: Any, tools: Sequence[Any] | None = None) -> bool:
+    """Gather is done only after real coverage — not a single opportunistic tool call.
+
+    Ready when:
+    - task→gatherer ran, OR every enabled domain agent family was used once
+    And non-verify todos are completed (when a plan exists).
+    """
+    if not (_gatherer_used(state) or _any_domain_tool_used(state)):
+        return False
+
+    # Still have gather steps open → not ready
+    if _outstanding_gather_todos(state):
+        return False
+
+    enabled = _enabled_domain_agents(tools)
+    used = _used_domain_agents(state)
+    if enabled and not _gatherer_used(state):
+        # One calculator call must not unlock verifier while search is still unused
+        if not enabled.issubset(used):
             return False
+
+    if _state_todos(state) and not _non_verify_todos_complete(state):
+        return False
+
     return True
+
+
+def _append_system_nudge(request: ModelRequest, nudge: str) -> Any:
+    existing = request.system_message
+    if existing is None:
+        from langchain_core.messages import SystemMessage
+
+        return SystemMessage(content=nudge)
+    from langchain_core.messages import SystemMessage
+
+    base = existing.content
+    if isinstance(base, str):
+        return SystemMessage(content=f"{base}\n\n{nudge}")
+    if isinstance(base, list):
+        return SystemMessage(
+            content=[*base, {"type": "text", "text": f"\n\n{nudge}"}]
+        )
+    return SystemMessage(content=f"{base}\n\n{nudge}")
 
 
 @wrap_model_call  # type: ignore[arg-type]
@@ -189,60 +417,186 @@ async def force_todos_when_empty(
 
 
 @wrap_model_call  # type: ignore[arg-type]
-async def force_domain_tools_after_plan(
+async def force_mcp_once_after_plan(
     request: ModelRequest,
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
-    """After a plan exists, require each enabled agent family at least once."""
+    """Drive gather one plan step at a time: gatherer → tick todos → gatherer…
+
+    After a gatherer returns, force write_todos so step N is completed and
+    step N+1 becomes in_progress before the next gatherer call.
+    """
     todos = _state_todos(request.state)
     if not todos:
         return await handler(request)
-    if _todos_all_completed(todos):
+    if _verifier_used(request.state):
+        return await handler(request)
+    if _ready_for_verifier(request.state, request.tools):
         return await handler(request)
 
+    names = {_tool_name(t) for t in (request.tools or [])}
+    in_prog = _in_progress_todo(request.state)
+    outstanding_gather = _outstanding_gather_todos(request.state)
+    last = _last_tool_action(request.state)
+
+    # Let the parent draft during synthesize — do not steal the turn for tools
+    if in_prog and _is_synthesize_todo(in_prog) and not outstanding_gather:
+        return await handler(request)
+
+    # After gatherer (or domain gather) returns, tick the plan before next gather
+    if (
+        outstanding_gather
+        and last in {"gatherer", "domain"}
+        and "write_todos" in names
+    ):
+        focus = _todo_content(in_prog) or _todo_content(outstanding_gather[0])
+        nudge = (
+            "HARD REQUIREMENT: a gather step just finished. Call write_todos now: "
+            "mark the completed gather step completed, set the NEXT gather step "
+            f'to in_progress (focus was: "{focus[:180]}"). Do NOT call gatherer, '
+            "verifier, or answer yet."
+        )
+        return await handler(
+            request.override(
+                tool_choice="write_todos",
+                system_message=_append_system_nudge(request, nudge),
+            )
+        )
+
+    # Still have gather todos → gatherer for the single in_progress step only
+    if outstanding_gather and "task" in names:
+        focus = _todo_content(in_prog) if (in_prog and _is_gather_todo(in_prog)) else ""
+        if not focus:
+            focus = _todo_content(outstanding_gather[0])
+        nudge = (
+            'HARD REQUIREMENT: call task with subagent_type="gatherer" for ONLY '
+            f'this in-progress gather step: "{focus[:220]}". Do NOT include later '
+            "todos in the description. After it returns you will write_todos and "
+            "call gatherer again for the next gather step. Do NOT call verifier."
+        )
+        task_tools = [t for t in (request.tools or []) if _tool_name(t) == "task"]
+        return await handler(
+            request.override(
+                tools=task_tools,
+                tool_choice="task",
+                system_message=_append_system_nudge(request, nudge),
+            )
+        )
+
+    # No gather todos left but coverage still incomplete — force remaining MCP
     domain = [t for t in (request.tools or []) if _is_domain_tool_name(_tool_name(t))]
     if not domain:
-        names = {_tool_name(t) for t in (request.tools or [])}
-        if "task" in names:
-            return await handler(request.override(tool_choice="task"))
         return await handler(request)
 
-    available = {_domain_agent_id(_tool_name(t)) for t in domain}
-    available.discard(None)
+    enabled = _enabled_domain_agents(request.tools)
     used = _used_domain_agents(request.state)
-    missing = {a for a in available if a not in used}
-    if not missing:
+    missing = enabled - used
+    remaining = [
+        t for t in domain
+        if _domain_agent_id(_tool_name(t)) in missing
+    ] or domain
+    nudge = (
+        "HARD REQUIREMENT: Enabled tools are available. Call a relevant tool "
+        "now for unfinished gather work"
+        + (f" (still unused: {', '.join(sorted(missing))})" if missing else "")
+        + ". Do not write the final answer from memory. Do NOT call verifier yet."
+    )
+    return await handler(
+        request.override(
+            tools=remaining,
+            tool_choice="any",
+            system_message=_append_system_nudge(request, nudge),
+        )
+    )
+
+
+@wrap_model_call  # type: ignore[arg-type]
+async def force_verifier_before_finish(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    """Hard-require task→verifier after gather coverage is actually complete."""
+    todos = _state_todos(request.state)
+    if not todos:
+        return await handler(request)
+    if _verifier_used(request.state):
+        return await handler(request)
+    if not _ready_for_verifier(request.state, request.tools):
         return await handler(request)
 
-    filtered = [
-        t
-        for t in domain
-        if _domain_agent_id(_tool_name(t)) in missing
-    ]
-    return await handler(request.override(tools=filtered or domain, tool_choice="any"))
+    tools = list(request.tools or [])
+    task_tools = [t for t in tools if _tool_name(t) == "task"]
+    if not task_tools:
+        return await handler(request)
+
+    nudge = (
+        'HARD REQUIREMENT for this turn: call the task tool with '
+        'subagent_type="verifier" only. Do NOT call gatherer. Do NOT answer yet. '
+        "Verifier must only re-check the draft — not do primary research."
+    )
+    return await handler(
+        request.override(
+            tools=task_tools,
+            tool_choice="task",
+            system_message=_append_system_nudge(request, nudge),
+        )
+    )
 
 
 def _rsv_subagents(tools: list) -> list[dict]:
-    """Gather/verify helpers share whatever tools the user enabled."""
-    available = list(tools or [])
+    """Gather/verify helpers share enabled MCP tools only (no filesystem).
+
+    Include configurable_model so subagents use Context.model (Gemini etc.),
+    not the create_deep_agent Anthropic placeholder.
+    FilesystemMiddleware(tools=[]) disables inherited glob/ls/etc. on subagents.
+    """
+    from deepagents.middleware.filesystem import (
+        FilesystemMiddleware,
+        FilesystemPermission,
+    )
+
+    # Domain MCP tools only — drop cite_sources / meta if present
+    available = [
+        t
+        for t in (tools or [])
+        if _is_domain_tool_name(_tool_name(t))
+    ]
+    # read_file is required by FilesystemMiddleware; deny all paths so glob/ls
+    # never appear and reads are blocked.
+    no_fs = FilesystemMiddleware(
+        tools=["read_file"],
+        _permissions=[
+            FilesystemPermission(
+                operations=["read", "write"],
+                paths=["/**"],
+                mode="deny",
+            )
+        ],
+    )
+    sub_middleware = [configurable_model, no_fs]
     return [
         {
             "name": "gatherer",
             "description": (
-                "Gather evidence with the enabled agents/tools for complex questions. "
-                "Use before synthesizing when several tool calls are needed."
+                "Gather evidence for ONE in-progress plan step only. Pass only "
+                "that step's text. After it returns, write_todos and call again "
+                "for the next gather step — do not pack multiple todos into one call."
             ),
             "system_prompt": _GATHERER_PROMPT,
             "tools": available,
+            "middleware": sub_middleware,
         },
         {
             "name": "verifier",
             "description": (
-                "Challenge a draft with the same enabled tools: recompute, re-fetch, "
-                "or cross-check. Use after synthesizing, before the final answer."
+                "REQUIRED before the final answer. Light re-check only (≤3 tool "
+                "calls): one math recompute and/or 1–2 targeted fact re-fetches. "
+                'Call via task(subagent_type="verifier") after gather/synthesize. '
+                "Do not use for primary research."
             ),
             "system_prompt": _VERIFIER_PROMPT,
             "tools": available,
+            "middleware": sub_middleware,
         },
     ]
 
@@ -259,7 +613,8 @@ def build_deep_agent(
     middleware: list = [
         TodoListMiddleware(system_prompt=_TODO_SYSTEM_PROMPT),
         force_todos_when_empty,
-        force_domain_tools_after_plan,
+        force_mcp_once_after_plan,
+        force_verifier_before_finish,
         configurable_model,
         dynamic_system_prompt,
     ]
@@ -269,7 +624,8 @@ def build_deep_agent(
         skill_list.append("/skills/research/")
 
     kwargs: dict = dict(
-        model="anthropic:claude-sonnet-4-5-20250929",
+        # Default/fallback model for subagents; main agent still overridden by Context.
+        model=settings.MODEL or "google_genai:gemini-3.8-flash",
         tools=resolved_tools,
         system_prompt=_SYSTEM_PROMPT,
         context_schema=Context,
