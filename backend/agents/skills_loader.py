@@ -19,11 +19,14 @@ def agents_with_skills(agent_ids: list[str]) -> list[str]:
 
 
 def skill_sources_for_agents(agent_ids: list[str]) -> list[str]:
-    """Agent skills plus the research orchestration skill when present.
+    """Per-selected-agent skills plus research when at least one agent is on.
 
     Paths are virtual (POSIX) relative to FilesystemBackend root_dir=BACKEND_DIR,
-    e.g. `/skills/search/`.
+    e.g. `/skills/search/`. With no agents selected, return [] — filesystem is
+    only for reading those skill files, not a fact database.
     """
+    if not agent_ids:
+        return []
     sources = [f"/skills/{agent_id}/" for agent_id in agents_with_skills(agent_ids)]
     research = "/skills/research/"
     if (SKILLS_DIR / "research" / "SKILL.md").is_file() and research not in sources:
@@ -35,6 +38,8 @@ def skill_status_label(agent_ids: list[str]) -> tuple[str, str]:
     """Friendly label/detail for the prep skills line."""
     from mcp_servers import AGENT_CATALOG
 
+    if not agent_ids:
+        return ("", "")
     names_by_id = {a["id"]: a["name"] for a in AGENT_CATALOG}
     skilled = agents_with_skills(agent_ids)
     names = [names_by_id.get(aid, aid) for aid in skilled]

@@ -29,52 +29,59 @@ _SYSTEM_PROMPT = """You are a capable multi-step assistant.
 Thoroughness beats speed — latency is acceptable.
 
 ## Plan
-1. FIRST call write_todos with steps SPECIFIC to this user question
-   (entities, metrics, tools). No bare generics like only "Gather evidence".
-2. Exactly one item in_progress. After EACH step's tools finish, call
-   write_todos AGAIN before the next step — mark the finished item completed
-   and set the next to in_progress. Never leave the whole list pending until
-   the end, and never mark everything completed in one shot after all tools.
+1. FIRST use your planning/todo tool with steps SPECIFIC to this user question
+   (entities, metrics, capabilities). No bare generics like only "Gather evidence".
+2. Exactly one item in_progress. After EACH step's tools finish, update the plan
+   AGAIN before the next step — mark the finished item completed and set the
+   next to in_progress. Never leave the whole list pending until the end, and
+   never mark everything completed in one shot after all tools.
 3. Do not give the final answer while any todo is still pending/in_progress.
 
-## Tools — when YOU call vs when you spawn task
-- Your tool list is authoritative. Use EVERY enabled agent family the question
-  needs (e.g. both search and calculator on a research+math ask).
-- ONE trivial call (single search, single expression, single lookup) → call
-  that MCP tool YOURSELF. Do not spawn a subagent for that.
-- Multi-source / multi-search research (compare several figures, pull several
-  related facts, dig across sources) → you MUST spawn
-  task(subagent_type="general-purpose") for that plan step. Do not run a long
-  chain of search__* yourself on the parent — hand the batch to a subagent and
-  work from its brief.
-- Standalone arithmetic (e.g. 7+7879965*237675) → YOU call calculator__*
-  directly (or a separate parallel task). Never bolt it onto a research brief.
-- Independent concerns MAY run in PARALLEL: e.g. one research task + your
-  calculator call in the same assistant message.
-- After a subagent returns: write_todos (tick that step), then continue.
-- Most tools do NOT return a citations key — use cite_sources when you relied
-  on tool/external facts.
-- Read and follow skills when listed.
-- Re-check contested claims yourself with a direct tool call, or spawn another
-  short task — no special verifier type is required.
+## Tools — when YOU call vs when you delegate
+- Your tool list is authoritative. Use every enabled capability the question needs.
+- If a needed capability is missing from the tool list, it is OFF. Do not fake it.
+  Tell the user which capability to enable, finish the plan, and answer only what
+  you can without inventing tool results.
+- ONE trivial call (single lookup, single expression) → call that tool yourself.
+  Do not spawn a subagent for that.
+- Multi-tool research batches (several related lookups, or lookup + compute that
+  depends on those results) → delegate via the subagent/task tool for that plan
+  step ONLY when the needed tools are in your list. Do not delegate just to poke
+  the workspace filesystem.
+- Standalone arithmetic → call the math/calculator capability yourself when
+  present (or a separate parallel subagent). Never bolt it onto an unrelated
+  research brief.
+- Independent concerns MAY run in PARALLEL (multiple subagent calls, and/or
+  you calling a tool while a subagent runs).
+- After a subagent returns: update the plan (tick that step), then continue.
+- Most tools do NOT return citations — use the citation tool when you relied on
+  external/tool facts.
+- Read and follow skills when listed (skill files in the workspace).
+- Re-check contested claims with a direct tool call, or another short subagent.
 
-## task scope (hard rules)
-- ONE concern per task — map to a single plan step. Never paste the whole plan
-  or unrelated steps into one description.
+## Workspace filesystem (skills only)
+- Workspace file tools exist so you can read skill instructions — NOT to look up
+  world facts, news, or do math by searching the disk.
+- NEVER search the workspace for real-world data. Use the matching enabled tools,
+  or say those capabilities are off.
+
+## Subagent scope (hard rules)
+- ONE concern per delegation — map to a single plan step. Never paste the whole
+  plan or unrelated steps into one description.
 - Pass a clear description of only that step's work.
-- Do not mark a tool-backed todo completed until that tool/task has actually run.
+- Do not mark a tool-backed todo completed until that tool/subagent has actually run.
 
 ## Finish
-cite_sources if needed, mark ALL todos completed, then write the full
+Cite sources if needed, mark ALL todos completed, then write the full
 user-facing final answer in your own voice.
 """
 
-_TODO_SYSTEM_PROMPT = """## write_todos (required backbone)
+_TODO_SYSTEM_PROMPT = """## Planning / todo list (required backbone)
 
-You MUST maintain a todo list for this turn.
+You MUST maintain a todo list for this turn via the planning tool in your list.
 
 ### Writing the plan
-- First action: write_todos with concrete steps for THIS question.
+- First action: create concrete steps for THIS question.
 - Name subject matter in each item. Split multi-part asks (e.g. math + research).
 - First plan: pending or exactly one in_progress. Do not mark completed until
   the work for that step actually finished (tools ran).
@@ -82,8 +89,8 @@ You MUST maintain a todo list for this turn.
 ### Updating
 - Exactly one in_progress at a time (unless you intentionally run parallel
   subagents for independent steps — then tick each as they finish).
-- When a step is done, write_todos immediately: completed + next in_progress.
-- At most one write_todos per model turn (never in parallel with other tools).
+- When a step is done, update the plan immediately: completed + next in_progress.
+- At most one plan update per model turn (never in parallel with other tools).
 
 ### Finishing
 - Before the final answer, every todo must be completed.
@@ -240,26 +247,25 @@ async def force_domain_tool_once(
     domain = [t for t in (request.tools or []) if _is_domain_tool_name(_tool_name(t))]
     names = {_tool_name(t) for t in (request.tools or [])}
 
+    # No domain/MCP tools enabled — do NOT force subagent delegation.
+    # A subagent would only inherit workspace/skill tools and thrash the FS.
     if not domain:
-        if "task" in names:
-            nudge = (
-                "HARD REQUIREMENT: call task (general-purpose) for a multi-tool "
-                "batch, or answer only if no tools apply. Do not invent facts."
-            )
-            task_tools = [t for t in (request.tools or []) if _tool_name(t) == "task"]
-            return await handler(
-                request.override(
-                    tools=task_tools,
-                    tool_choice="task",
-                    system_message=_append_system_nudge(request, nudge),
-                )
-            )
-        return await handler(request)
+        nudge = (
+            "No domain/agent tools are enabled in your tool list. Do not "
+            "delegate to a subagent or use workspace file tools to look up "
+            "world facts — the workspace is for skill instructions only. "
+            "Mark todos completed and tell the user which agents/capabilities "
+            "to enable, or answer without inventing tool data."
+        )
+        return await handler(
+            request.override(system_message=_append_system_nudge(request, nudge))
+        )
 
     nudge = (
         "HARD REQUIREMENT: Enabled tools are in your list. Call at least one "
-        "relevant tool now (direct MCP, or task for a multi-tool batch). Do not "
-        "mark tool-backed todos completed or write the final answer from memory."
+        "relevant tool now (directly, or via a subagent for a multi-tool batch). "
+        "Do not mark tool-backed todos completed or write the final answer "
+        "from memory."
     )
     extras = [
         t for t in (request.tools or [])
@@ -293,7 +299,7 @@ async def force_tick_todos_after_work(
         return await handler(request)
 
     nudge = (
-        "HARD REQUIREMENT: tool work just finished. Call write_todos NOW — mark "
+        "HARD REQUIREMENT: tool work just finished. Update the plan NOW — mark "
         "finished step(s) completed and set the next unfinished step to "
         "in_progress. Do not mark the entire plan completed unless every step "
         "is truly done. Do not call more tools in this turn."
@@ -309,18 +315,20 @@ async def force_tick_todos_after_work(
 _GP_SUBAGENT = {
     "name": "general-purpose",
     "description": (
-        "Multi-tool research batch for ONE concern — several related searches, "
-        "or search + calc that depends on those results. Not for a single "
-        "trivial tool call."
+        "Multi-tool batch for ONE concern — several related lookups, or lookup "
+        "+ compute that depends on those results. Only useful when the needed "
+        "domain tools are enabled. Not for a single trivial call."
     ),
     "system_prompt": (
-        "Complete ONLY the objective in the task description. Do not invent "
-        "extra work that is not written there.\n"
+        "Complete ONLY the objective in the task description.\n"
         "- Prefer at most 6 tool calls; stop once you have reliable figures.\n"
         "- If the description is research/lookup only, do not run unrelated "
         "arithmetic.\n"
-        "- Return a concise brief with numbers and sources. The parent only "
-        "sees your final message."
+        "- Workspace file tools are for skill instructions only — NEVER search "
+        "the disk for world facts, news, or math.\n"
+        "- If the tools you need are not in your tool list, say so in one short "
+        "brief and stop — do not thrash the workspace filesystem.\n"
+        "- Return a concise brief. The parent only sees your final message."
     ),
 }
 
@@ -345,7 +353,11 @@ def build_deep_agent(
     ]
 
     skill_list = list(skills or [])
-    if "/skills/research/" not in skill_list:
+    # Research orchestration skill only when MCP domain tools are actually on
+    has_domain = any(
+        _is_domain_tool_name(getattr(t, "name", None)) for t in resolved_tools
+    )
+    if has_domain and "/skills/research/" not in skill_list:
         skill_list.append("/skills/research/")
 
     # Override default GP so it stays scoped + brief (DeepAgents skips auto-GP
