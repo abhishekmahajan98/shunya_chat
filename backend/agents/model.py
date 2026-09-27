@@ -88,10 +88,34 @@ async def dynamic_system_prompt(
     request: ModelRequest,
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
+    """Append the assistant's extra prompt — never replace the graph's.
+
+    Replacing wiped deep-agent / Skills / write_todos instructions and left
+    models (esp. Gemini) claiming enabled tools were unavailable.
+    """
     ctx = request.runtime.context
     prompt = getattr(ctx, "system_prompt", None) if ctx else None
-    if prompt:
-        return await handler(
-            request.override(system_message=SystemMessage(content=prompt))
-        )
-    return await handler(request)  # type: ignore[misc, no-any-return]
+    if not prompt:
+        return await handler(request)  # type: ignore[misc, no-any-return]
+
+    existing = request.system_message
+    if existing is None:
+        new_msg = SystemMessage(content=prompt)
+    else:
+        blocks = getattr(existing, "content_blocks", None)
+        if blocks:
+            new_msg = SystemMessage(
+                content=[*blocks, {"type": "text", "text": f"\n\n{prompt}"}]
+            )
+        else:
+            base = existing.content
+            if isinstance(base, str):
+                new_msg = SystemMessage(content=f"{base}\n\n{prompt}")
+            else:
+                new_msg = SystemMessage(
+                    content=[
+                        *(base if isinstance(base, list) else [{"type": "text", "text": str(base)}]),
+                        {"type": "text", "text": f"\n\n{prompt}"},
+                    ]
+                )
+    return await handler(request.override(system_message=new_msg))

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from auth import DummyUser, get_current_user
-from config import AVAILABLE_MODELS, ModelInfo, get_model_info, settings
+from config import AVAILABLE_MODELS, AgentInfo, ModelInfo, get_available_agents, get_model_info, settings
 from db import get_store
 from models import ConversationDetail, ConversationSummary, MessageCreate, MessageOut
 from services.agent_runner import stream_chat
@@ -25,6 +25,12 @@ async def me(user: DummyUser = Depends(get_current_user)):
 @router.get("/models", response_model=list[ModelInfo])
 async def list_models():
     return AVAILABLE_MODELS
+
+
+@router.get("/agents", response_model=list[AgentInfo])
+async def list_agents():
+    """Capability agents the UI can toggle. Any selected → deep_agent + /mcp/{id} tools."""
+    return get_available_agents()
 
 
 @router.post("/upload")
@@ -92,6 +98,7 @@ async def get_thread(thread_id: str, user: DummyUser = Depends(get_current_user)
                 created_at=m["created_at"],
                 additional_kwargs=m.get("additional_kwargs"),
                 tool_calls=m.get("tool_calls"),
+                agents=(m.get("additional_kwargs") or {}).get("active_agents"),
             )
             for m in visible
         ],
@@ -119,8 +126,16 @@ async def chat_stream(request: MessageCreate, user: DummyUser = Depends(get_curr
         user_id=user.id,
         content=request.content,
         model=request.model,
-        assistant_id=request.assistant_id,
+        active_agents=request.active_agents,
         thread_id=thread_id,
         model_base_url=request.model_base_url,
     )
-    return StreamingResponse(generator, media_type="text/event-stream")
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

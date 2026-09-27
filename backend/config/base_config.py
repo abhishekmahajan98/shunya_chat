@@ -21,7 +21,9 @@ class BaseConfig(BaseSettings):
     GOOGLE_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
-    MODEL: str = "google_genai:gemini-3.5-flash"
+    PERPLEXITY_API_KEY: str = ""
+    PERPLEXITY_MODEL: str = "sonar"
+    MODEL: str = "google_genai:gemini-3.8-flash"
     MODEL_BASE_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

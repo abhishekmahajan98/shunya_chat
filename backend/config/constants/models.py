@@ -16,10 +16,16 @@ class ModelRegistry:
 
     AVAILABLE_MODELS: list[ModelInfo] = [
         ModelInfo(
+            id="google_genai:gemini-3.8-flash",
+            name="Gemini 3.8 Flash",
+            provider="google",
+            description="Default — most intelligent Flash, for agents",
+        ),
+        ModelInfo(
             id="google_genai:gemini-3.5-flash",
             name="Gemini 3.5 Flash",
             provider="google",
-            description="Default — fast agentic Gemini",
+            description="Legacy Flash — baseline high-throughput",
         ),
         ModelInfo(
             id="google_genai:gemini-3-flash-preview",

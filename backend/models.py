@@ -18,7 +18,8 @@ class MessageCreate(BaseModel):
     model: str
     conversation_id: Optional[str] = None  # alias for thread_id (frontend compat)
     thread_id: Optional[str] = None
-    assistant_id: Optional[str] = None
+    assistant_id: Optional[str] = None  # ignored — graph chosen from active_agents
+    active_agents: list[str] = Field(default_factory=list)
     model_base_url: Optional[str] = None
     attachments: Optional[list[Attachment]] = None
 

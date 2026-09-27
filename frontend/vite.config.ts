@@ -9,6 +9,17 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        // SSE: disable proxy buffering so plan/steps stream live
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, _req, res) => {
+            const ct = String(proxyRes.headers['content-type'] || '')
+            if (ct.includes('text/event-stream')) {
+              res.setHeader('Cache-Control', 'no-cache, no-transform')
+              res.setHeader('X-Accel-Buffering', 'no')
+              delete proxyRes.headers['content-length']
+            }
+          })
+        },
       }
     }
   }

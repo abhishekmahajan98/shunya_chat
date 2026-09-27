@@ -13,3 +13,4 @@ langchain-anthropic>=0.3.0
 langchain-openai>=0.3.0
 langchain-google-genai>=2.0.0
 deepagents>=0.5.9
+fastmcp>=2.0.0

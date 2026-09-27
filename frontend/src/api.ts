@@ -7,6 +7,12 @@ export interface ModelInfo {
     description: string;
 }
 
+export interface AgentInfo {
+    id: string;
+    name: string;
+    description: string;
+}
+
 export interface Assistant {
     id: string;
     name: string;
@@ -51,7 +57,7 @@ export interface ConversationDetail {
 }
 
 export interface StreamChunk {
-    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'status' | 'tool_start' | 'tool_end';
+    type: 'meta' | 'thinking' | 'text' | 'done' | 'error' | 'status' | 'tool_start' | 'tool_end' | 'todos' | 'citations';
     content?: string;
     conversation_id?: string;
     thread_id?: string;
@@ -62,6 +68,15 @@ export interface StreamChunk {
     name?: string;
     input?: string;
     output?: string;
+    label?: string;
+    detail?: string;
+    summary?: string;
+    category?: string;
+    step_id?: string;
+    agents?: string[];
+    graph_id?: string;
+    todos?: { content: string; status: string }[];
+    citations?: { id: string; title: string; url?: string; agent?: string; detail?: string }[];
 }
 
 export async function getMe(): Promise<{ id: string; email: string; name: string }> {
@@ -76,15 +91,20 @@ export async function getModels(): Promise<ModelInfo[]> {
     return response.json();
 }
 
+export async function getAgents(): Promise<AgentInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/agents`);
+    if (!response.ok) throw new Error('Failed to fetch agents');
+    return response.json();
+}
+
 export async function getAssistants(): Promise<Assistant[]> {
     const response = await fetch(`${API_BASE_URL}/api/assistants`);
     if (!response.ok) throw new Error('Failed to fetch assistants');
     return response.json();
 }
 
-export async function getConversations(limit: number = 20, offset: number = 0, assistantId?: string): Promise<ConversationSummary[]> {
+export async function getConversations(limit: number = 20, offset: number = 0): Promise<ConversationSummary[]> {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-    if (assistantId) params.set('assistant_id', assistantId);
     const response = await fetch(`${API_BASE_URL}/api/threads?${params}`);
     if (!response.ok) throw new Error('Failed to fetch conversations');
     return response.json();
@@ -107,7 +127,7 @@ export async function streamMessage(
     onChunk: (chunk: StreamChunk) => void,
     conversationId?: string,
     attachments?: { id: string; name: string; type: string; url: string; size: number }[],
-    assistantId?: string,
+    activeAgents?: string[],
 ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
@@ -117,7 +137,7 @@ export async function streamMessage(
             content,
             conversation_id: conversationId,
             thread_id: conversationId,
-            assistant_id: assistantId,
+            active_agents: activeAgents || [],
             attachments,
         }),
     });

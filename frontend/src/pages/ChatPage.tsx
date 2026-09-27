@@ -13,9 +13,10 @@ import {
   ClockCircleOutlined,
   PlusOutlined,
   RobotOutlined,
+  CheckOutlined,
 } from '@ant-design/icons';
 import { useTheme } from '../context/ThemeContext';
-import { useChat, type Attachment, type ReasoningStep } from '../context/ChatContext';
+import { useChat, type Attachment, type ReasoningStep, type TodoItem, type Citation } from '../context/ChatContext';
 import { VerticalNav } from '../components/VerticalNav';
 import { HistoryPanel } from '../components/HistoryPanel';
 import MessageRenderer from '../components/MessageRenderer';
@@ -35,14 +36,15 @@ const ChatPage = () => {
     conversationId,
     setConversationId,
     clearMessages,
-    assistants,
-    selectedAssistantId,
-    setSelectedAssistantId,
+    availableAgents,
+    selectedAgentIds,
+    toggleAgent,
   } = useChat();
 
   const [inputValue, setInputValue] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [mobileNavVisible, setMobileNavVisible] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -140,21 +142,47 @@ const ChatPage = () => {
     });
 
     const assistantMsgId = addMessage({
-      type: 'sync',
+      type: 'reasoning',
       sender: 'assistant',
       content: '',
       pending: true,
+      reasoning: {
+        steps: [{
+          id: 'tool-planning',
+          text: 'Planning',
+          detail: 'Building the todo plan',
+          status: 'running',
+          category: 'plan',
+        }],
+        isExpanded: true,
+      },
     });
 
     let textContent = '';
-    const steps: ReasoningStep[] = [];
+    const steps: ReasoningStep[] = [{
+      id: 'tool-planning',
+      text: 'Planning',
+      detail: 'Building the todo plan',
+      status: 'running',
+      category: 'plan',
+    }];
+    let todos: TodoItem[] = [];
+    let citations: Citation[] = [];
 
     const pushSteps = (expanded = true) => {
+      // Keep Agentic Reasoning open while a plan exists so todos stay visible
+      const keepOpen = expanded || todos.length > 0;
       updateMessage(assistantMsgId, {
         pending: false,
-        type: steps.length ? 'reasoning' : 'sync',
+        type: steps.length || todos.length ? 'reasoning' : 'sync',
         content: textContent,
-        reasoning: steps.length ? { steps: [...steps], isExpanded: expanded } : undefined,
+        reasoning: steps.length
+          ? { steps: [...steps], isExpanded: keepOpen }
+          : todos.length
+            ? { steps: [], isExpanded: true }
+            : undefined,
+        todos: todos.length ? [...todos] : undefined,
+        citations: citations.length ? [...citations] : undefined,
       });
     };
 
@@ -171,36 +199,105 @@ const ChatPage = () => {
           if (chunk.type === 'meta' && (chunk.conversation_id || chunk.thread_id)) {
             setConversationId(chunk.conversation_id || chunk.thread_id || null);
           } else if (chunk.type === 'status') {
-            const idx = steps.findIndex(s => s.id === 'status');
-            const step = { id: 'status', text: chunk.content || 'Working…', status: 'running' as const };
-            if (idx >= 0) steps[idx] = step;
-            else steps.unshift(step);
+            // Old split prep events — ignore; we use a single `prep` line
+            const skip = new Set(['prep-agents', 'prep-skills', 'starting', 'planning']);
+            if (chunk.step_id && skip.has(chunk.step_id)) {
+              return;
+            }
+            const id = chunk.step_id || `status-${steps.length}`;
+            // Insert prep before Planning so the timeline reads setup → plan → work
+            const step = {
+              id,
+              text: chunk.label || chunk.content || 'Working…',
+              detail: chunk.detail,
+              status: 'complete' as const,
+              category: chunk.category || (chunk.step_id === 'prep' ? 'prep' : 'status'),
+            };
+            const planningIdx = steps.findIndex((s) => s.id === 'tool-planning');
+            const existing = steps.findIndex((s) => s.id === id);
+            if (existing >= 0) {
+              steps[existing] = step;
+            } else if (chunk.step_id === 'prep' && planningIdx >= 0) {
+              steps.splice(planningIdx, 0, step);
+            } else {
+              steps.push(step);
+            }
+            pushSteps(true);
+          } else if (chunk.type === 'todos' && chunk.todos) {
+            todos = chunk.todos.map((t) => ({
+              content: t.content,
+              status: t.status,
+            }));
+            pushSteps(true);
+          } else if (chunk.type === 'citations' && chunk.citations) {
+            citations = chunk.citations.map((c) => ({
+              id: String(c.id),
+              title: c.title,
+              url: c.url,
+              agent: c.agent,
+              detail: c.detail,
+            }));
             pushSteps(true);
           } else if (chunk.type === 'tool_start') {
-            steps.push({
-              id: `tool-${chunk.tool_run_id}`,
-              text: `Using ${chunk.tool_name || chunk.name || 'tool'}${chunk.input ? `: ${chunk.input}` : ''}`,
-              status: 'running',
-            });
+            const id = chunk.tool_run_id === 'planning'
+              ? 'tool-planning'
+              : `tool-${chunk.tool_run_id}`;
+            const idx = steps.findIndex((s) => s.id === id);
+            const step = {
+              id,
+              text: chunk.label || `Using ${chunk.tool_name || chunk.name || 'tool'}`,
+              detail: chunk.detail,
+              status: 'running' as const,
+              category: chunk.category || (chunk.tool_run_id === 'planning' ? 'plan' : 'tool'),
+            };
+            if (idx >= 0) steps[idx] = step;
+            else steps.push(step);
             pushSteps(true);
           } else if (chunk.type === 'tool_end') {
-            const idx = steps.findIndex(s => s.id === `tool-${chunk.tool_run_id}`);
-            if (idx >= 0) {
-              const base = steps[idx].text;
-              steps[idx] = {
-                ...steps[idx],
-                status: 'complete',
-                text: chunk.output ? `${base}\n→ ${chunk.output}` : base,
-              };
-            }
+            const id = chunk.tool_run_id === 'planning'
+              ? 'tool-planning'
+              : `tool-${chunk.tool_run_id}`;
+            const idx = steps.findIndex((s) => s.id === id);
+            const step = {
+              id,
+              text: chunk.label || steps[idx]?.text || 'Done',
+              detail: (idx >= 0 ? steps[idx].detail : undefined) || chunk.detail,
+              status: 'complete' as const,
+              category: chunk.category || steps[idx]?.category || 'tool',
+            };
+            // Upsert — never drop a completed tool if start was missed
+            if (idx >= 0) steps[idx] = step;
+            else steps.push(step);
             pushSteps(true);
           } else if (chunk.type === 'text') {
             textContent += chunk.content || '';
-            const statusIdx = steps.findIndex(s => s.id === 'status');
-            if (statusIdx >= 0) steps[statusIdx] = { ...steps[statusIdx], status: 'complete' };
-            pushSteps(false);
+            pushSteps(true);
           } else if (chunk.type === 'done') {
+            steps.forEach((s, i) => {
+              if (s.status === 'running') steps[i] = { ...s, status: 'complete' };
+            });
+            if (chunk.todos?.length) {
+              todos = chunk.todos.map((t) => ({
+                content: t.content,
+                status: t.status,
+              }));
+            }
+            if (chunk.citations?.length) {
+              citations = chunk.citations.map((c) => ({
+                id: String(c.id),
+                title: c.title,
+                url: c.url,
+                agent: c.agent,
+                detail: c.detail,
+              }));
+            }
             pushSteps(false);
+            if (chunk.agents?.length) {
+              updateMessage(assistantMsgId, {
+                agents: chunk.agents,
+                citations: citations.length ? [...citations] : undefined,
+              });
+            }
           } else if (chunk.type === 'error') {
             updateMessage(assistantMsgId, {
               type: 'sync',
@@ -211,7 +308,7 @@ const ChatPage = () => {
         },
         conversationId || undefined,
         currentAttachments.length > 0 ? currentAttachments : undefined,
-        selectedAssistantId || undefined,
+        selectedAgentIds,
       );
     } catch (error) {
       console.error('Failed to stream message:', error);
@@ -247,22 +344,34 @@ const ChatPage = () => {
     ),
   }));
 
-  const selectedAssistant = assistants.find(a => a.id === selectedAssistantId) || null;
-  const assistantMenuItems: MenuProps['items'] = assistants.map((a) => ({
-    key: a.id,
+  const agentMenuItems: MenuProps['items'] = availableAgents.map((agent) => ({
+    key: agent.id,
     label: (
-      <div style={{ padding: '4px 0' }}>
-        <div style={{ fontWeight: 500 }}>{a.name}</div>
-        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{a.graph_id}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, minWidth: 180 }}>
+        <div style={{ padding: '2px 0' }}>
+          <div style={{ fontWeight: 500 }}>{agent.name}</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{agent.description}</div>
+        </div>
+        {selectedAgentIds.includes(agent.id) && (
+          <CheckOutlined style={{ color: 'var(--color-primary)', fontSize: 12 }} />
+        )}
       </div>
     ),
   }));
-  const handleAssistantClick: MenuProps['onClick'] = (e) => {
-    setSelectedAssistantId(e.key);
-    // New assistant ⇒ new thread
-    clearMessages();
-    setConversationId(null);
+
+  const handleAgentMenuClick: MenuProps['onClick'] = (e) => {
+    e.domEvent.preventDefault();
+    e.domEvent.stopPropagation();
+    toggleAgent(e.key);
+    setAgentMenuOpen(true); // keep open for multi-select
   };
+
+  const agentButtonLabel =
+    selectedAgentIds.length === 0
+      ? 'Agents'
+      : selectedAgentIds.length === 1
+        ? availableAgents.find((a) => a.id === selectedAgentIds[0])?.name || '1 agent'
+        : `${selectedAgentIds.length} agents`;
 
   return (
     <Layout style={{ height: '100vh', background: 'var(--color-bg)', overflow: 'hidden', flexDirection: 'row' }}>
@@ -472,20 +581,30 @@ const ChatPage = () => {
                     />
 
                     <Dropdown
-                      menu={{ items: assistantMenuItems, onClick: handleAssistantClick }}
+                      open={agentMenuOpen}
+                      onOpenChange={setAgentMenuOpen}
+                      menu={{
+                        items: agentMenuItems,
+                        selectable: true,
+                        multiple: true,
+                        selectedKeys: selectedAgentIds,
+                        onClick: handleAgentMenuClick,
+                      }}
                       trigger={['click']}
                     >
                       <Button
                         type="text"
                         icon={<RobotOutlined />}
                         style={{
-                          color: 'var(--color-text-secondary)',
+                          color: selectedAgentIds.length
+                            ? 'var(--color-primary)'
+                            : 'var(--color-text-secondary)',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 4,
                         }}
                       >
-                        <span style={{ fontSize: 13 }}>{selectedAssistant?.name || 'Assistant'}</span>
+                        <span style={{ fontSize: 13 }}>{agentButtonLabel}</span>
                       </Button>
                     </Dropdown>
 

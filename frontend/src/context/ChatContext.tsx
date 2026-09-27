@@ -1,17 +1,21 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getConversations, getConversation, getAssistants, type ConversationSummary, type Assistant } from '../api';
+import { getConversations, getConversation, getAgents, type ConversationSummary, type AgentInfo } from '../api';
 
 export interface Citation {
     id: string;
     title: string;
     url?: string;
     page?: number;
+    agent?: string;
+    detail?: string;
 }
 
 export interface ReasoningStep {
     id: string;
     text: string;
+    detail?: string;
     status: 'pending' | 'running' | 'complete' | 'failed';
+    category?: string;
 }
 
 export interface Attachment {
@@ -28,6 +32,11 @@ export interface AsyncTask {
     label: string;
 }
 
+export interface TodoItem {
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | string;
+}
+
 export interface Message {
     id: string;
     type: 'sync' | 'reasoning' | 'async-task';
@@ -39,6 +48,7 @@ export interface Message {
         steps: ReasoningStep[];
         isExpanded?: boolean;
     };
+    todos?: TodoItem[];
     task?: AsyncTask;
     agents?: string[];
     pending?: boolean;
@@ -53,9 +63,10 @@ interface ChatContextType {
     conversationId: string | null;
     setConversationId: (id: string | null) => void;
 
-    assistants: Assistant[];
-    selectedAssistantId: string | null;
-    setSelectedAssistantId: (id: string | null) => void;
+    availableAgents: AgentInfo[];
+    selectedAgentIds: string[];
+    toggleAgent: (agentId: string) => void;
+    setSelectedAgentIds: (ids: string[]) => void;
 
     conversations: ConversationSummary[];
     isLoadingHistory: boolean;
@@ -71,8 +82,8 @@ const ChatContext = createContext<ChatContextType | undefined>(undefined);
 export function ChatProvider({ children }: { children: ReactNode }) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [conversationId, setConversationId] = useState<string | null>(null);
-    const [assistants, setAssistants] = useState<Assistant[]>([]);
-    const [selectedAssistantId, setSelectedAssistantId] = useState<string | null>(null);
+    const [availableAgents, setAvailableAgents] = useState<AgentInfo[]>([]);
+    const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
 
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -82,7 +93,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const refreshHistory = async () => {
         setIsLoadingHistory(true);
         try {
-            const data = await getConversations(HISTORY_PAGE_SIZE, 0, selectedAssistantId || undefined);
+            const data = await getConversations(HISTORY_PAGE_SIZE, 0);
             setConversations(data);
             setHasMoreHistory(data.length === HISTORY_PAGE_SIZE);
         } catch (error) {
@@ -94,13 +105,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const refreshAllData = async () => {
         try {
-            const list = await getAssistants();
-            setAssistants(list);
-            if (!selectedAssistantId && list.length > 0) {
-                setSelectedAssistantId(list[0].id);
-            }
+            const agents = await getAgents();
+            setAvailableAgents(agents);
         } catch (error) {
-            console.error('Failed to load assistants:', error);
+            console.error('Failed to load agents:', error);
         }
         await refreshHistory();
     };
@@ -109,9 +117,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         refreshAllData();
     }, []);
 
-    useEffect(() => {
-        refreshHistory();
-    }, [selectedAssistantId]);
+    const toggleAgent = (agentId: string) => {
+        setSelectedAgentIds((prev) =>
+            prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId]
+        );
+    };
 
     const addMessage = (message: Omit<Message, 'id' | 'timestamp'>) => {
         const id = crypto.randomUUID();
@@ -133,8 +143,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (isLoadingHistory || !hasMoreHistory) return;
         setIsLoadingHistory(true);
         try {
-            const data = await getConversations(HISTORY_PAGE_SIZE, conversations.length, selectedAssistantId || undefined);
-            setConversations(prev => [...prev, ...data]);
+            const data = await getConversations(HISTORY_PAGE_SIZE, conversations.length);
+            setConversations((prev) => [...prev, ...data]);
             setHasMoreHistory(data.length === HISTORY_PAGE_SIZE);
         } catch (error) {
             console.error('Failed to load more history:', error);
@@ -149,17 +159,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         try {
             const data = await getConversation(id);
             setConversationId(data.id);
-            if (data.assistant_id) setSelectedAssistantId(data.assistant_id);
             setMessages(
                 data.messages
-                    .filter(m => m.role === 'user' || m.role === 'assistant')
-                    .map(msg => ({
+                    .filter((m) => m.role === 'user' || m.role === 'assistant')
+                    .map((msg) => ({
                         id: msg.id,
                         type: 'sync' as const,
-                        sender: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+                        sender: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
                         content: msg.content,
                         timestamp: new Date(msg.created_at),
                         attachments: msg.attachments as Attachment[] | undefined,
+                        agents: msg.agents || (msg.additional_kwargs?.active_agents as string[] | undefined),
+                        todos: (msg.additional_kwargs?.todos as TodoItem[] | undefined) || undefined,
+                        citations: (msg.additional_kwargs?.citations as Citation[] | undefined) || undefined,
                     }))
             );
         } catch (error) {
@@ -185,9 +197,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 },
                 conversationId,
                 setConversationId,
-                assistants,
-                selectedAssistantId,
-                setSelectedAssistantId,
+                availableAgents,
+                selectedAgentIds,
+                toggleAgent,
+                setSelectedAgentIds,
                 conversations,
                 isLoadingHistory,
                 hasMoreHistory,
