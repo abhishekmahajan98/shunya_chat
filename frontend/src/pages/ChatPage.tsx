@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { MenuProps } from 'antd';
-import { Layout, Input, Button, Dropdown, Grid, Drawer, message as antMessage } from 'antd';
+import { Layout, Input, Button, Dropdown, Grid, Drawer, message as antMessage, Modal } from 'antd';
 import {
   SendOutlined,
   PaperClipOutlined,
@@ -20,8 +20,8 @@ import { useChat, type Attachment, type ReasoningStep, type TodoItem, type Citat
 import { VerticalNav } from '../components/VerticalNav';
 import { HistoryPanel } from '../components/HistoryPanel';
 import MessageRenderer from '../components/MessageRenderer';
-import { streamMessage, type StreamChunk, uploadFile } from '../api';
-import { useNavigate } from 'react-router-dom';
+import { streamMessage, type StreamChunk, uploadFile, connectIntegrationUrl, disconnectIntegration, saveIntegrationApiKey } from '../api';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const { Content } = Layout;
 const { useBreakpoint } = Grid;
@@ -29,6 +29,7 @@ const { useBreakpoint } = Grid;
 const ChatPage = () => {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     messages,
     addMessage,
@@ -41,12 +42,17 @@ const ChatPage = () => {
     availableAgents,
     selectedAgentIds,
     toggleAgent,
+    refreshAgents,
   } = useChat();
 
   const [inputValue, setInputValue] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [mobileNavVisible, setMobileNavVisible] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+
+  const [apiKeyModalAgent, setApiKeyModalAgent] = useState<{ id: string; name: string } | null>(null);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [apiKeySaving, setApiKeySaving] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -84,6 +90,30 @@ const ChatPage = () => {
       });
     });
   }, []);
+
+  // OAuth return: ?integration=linear&status=connected|error
+  useEffect(() => {
+    const integration = searchParams.get('integration');
+    const status = searchParams.get('status');
+    if (!integration || !status) return;
+    const error = searchParams.get('error');
+    if (status === 'connected') {
+      antMessage.success(`${integration} connected`);
+      void refreshAgents().then(() => {
+        if (!selectedAgentIds.includes(integration)) {
+          toggleAgent(integration);
+        }
+      });
+    } else {
+      antMessage.error(error || `Failed to connect ${integration}`);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('integration');
+    next.delete('status');
+    next.delete('error');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -377,27 +407,103 @@ const ChatPage = () => {
     ),
   }));
 
-  const agentMenuItems: MenuProps['items'] = availableAgents.map((agent) => ({
-    key: agent.id,
-    label: (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, minWidth: 180 }}>
-        <div style={{ padding: '2px 0' }}>
-          <div style={{ fontWeight: 500 }}>{agent.name}</div>
-          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{agent.description}</div>
+  const agentMenuItems: MenuProps['items'] = availableAgents.map((agent) => {
+    const needsConnect =
+      agent.auth === 'oauth_dcr' ||
+      agent.auth === 'oauth_static' ||
+      agent.auth === 'user_api_key';
+    const connected = Boolean(agent.connected);
+    const missingEnv = agent.auth === 'env_api_key' && agent.ready === false;
+    let subtitle = agent.description;
+    if (needsConnect && !connected) {
+      subtitle = agent.auth === 'user_api_key' ? 'Add API key to enable' : 'Connect to enable';
+    } else if (missingEnv) {
+      subtitle = 'Server API key not configured';
+    }
+    return {
+      key: agent.id,
+      disabled: missingEnv,
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, minWidth: 220 }}>
+          <div style={{ padding: '2px 0' }}>
+            <div style={{ fontWeight: 500 }}>{agent.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{subtitle}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {needsConnect && (
+              <span style={{
+                fontSize: 11,
+                color: connected ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+              }}>
+                {connected ? 'Connected' : (agent.auth === 'user_api_key' ? 'Add key' : 'Connect')}
+              </span>
+            )}
+            {selectedAgentIds.includes(agent.id) && (
+              <CheckOutlined style={{ color: 'var(--color-primary)', fontSize: 12 }} />
+            )}
+          </div>
         </div>
-        {selectedAgentIds.includes(agent.id) && (
-          <CheckOutlined style={{ color: 'var(--color-primary)', fontSize: 12 }} />
-        )}
-      </div>
-    ),
-  }));
+      ),
+    };
+  });
 
   const handleAgentMenuClick: MenuProps['onClick'] = (e) => {
     e.domEvent.preventDefault();
     e.domEvent.stopPropagation();
+    const agent = availableAgents.find((a) => a.id === e.key);
+    if (!agent) return;
+
+    if (agent.auth === 'env_api_key' && agent.ready === false) {
+      antMessage.warning(`${agent.name} needs a server env key`);
+      return;
+    }
+
+    if ((agent.auth === 'oauth_dcr' || agent.auth === 'oauth_static') && !agent.connected) {
+      window.location.href = connectIntegrationUrl(agent.id);
+      return;
+    }
+
+    if (agent.auth === 'user_api_key' && !agent.connected) {
+      setApiKeyDraft('');
+      setApiKeyModalAgent({ id: agent.id, name: agent.name });
+      return;
+    }
+
+    if (
+      (agent.auth === 'oauth_dcr' || agent.auth === 'oauth_static' || agent.auth === 'user_api_key') &&
+      agent.connected &&
+      (e.domEvent.altKey || e.domEvent.shiftKey)
+    ) {
+      void disconnectIntegration(agent.id).then(() => {
+        if (selectedAgentIds.includes(agent.id)) toggleAgent(agent.id);
+        return refreshAgents();
+      }).then(() => antMessage.info(`${agent.name} disconnected`));
+      setAgentMenuOpen(true);
+      return;
+    }
+
     toggleAgent(e.key);
-    setAgentMenuOpen(true); // keep open for multi-select
+    setAgentMenuOpen(true);
   };
+
+  const saveApiKey = useCallback(async () => {
+    if (!apiKeyModalAgent) return;
+    setApiKeySaving(true);
+    try {
+      await saveIntegrationApiKey(apiKeyModalAgent.id, apiKeyDraft);
+      antMessage.success(`${apiKeyModalAgent.name} connected`);
+      setApiKeyModalAgent(null);
+      setApiKeyDraft('');
+      await refreshAgents();
+      if (!selectedAgentIds.includes(apiKeyModalAgent.id)) {
+        toggleAgent(apiKeyModalAgent.id);
+      }
+    } catch (err) {
+      antMessage.error(err instanceof Error ? err.message : 'Failed to save key');
+    } finally {
+      setApiKeySaving(false);
+    }
+  }, [apiKeyDraft, apiKeyModalAgent, refreshAgents, selectedAgentIds, toggleAgent]);
 
   const agentButtonLabel =
     selectedAgentIds.length === 0
@@ -703,6 +809,26 @@ const ChatPage = () => {
           </div>
         </div>
       </Drawer>
+
+      <Modal
+        title={apiKeyModalAgent ? `Connect ${apiKeyModalAgent.name}` : 'API key'}
+        open={Boolean(apiKeyModalAgent)}
+        onCancel={() => { setApiKeyModalAgent(null); setApiKeyDraft(''); }}
+        onOk={() => void saveApiKey()}
+        confirmLoading={apiKeySaving}
+        okText="Save"
+        okButtonProps={{ disabled: !apiKeyDraft.trim() }}
+      >
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+          Paste a personal API key. It is stored encrypted for your account only.
+        </p>
+        <Input.Password
+          value={apiKeyDraft}
+          onChange={(e) => setApiKeyDraft(e.target.value)}
+          placeholder="API key"
+          onPressEnter={() => void saveApiKey()}
+        />
+      </Modal>
     </Layout>
   );
 };

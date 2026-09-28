@@ -11,6 +11,23 @@ export interface AgentInfo {
     id: string;
     name: string;
     description: string;
+    auth?: 'none' | 'env_api_key' | 'user_api_key' | 'oauth_dcr' | 'oauth_static';
+    mcp_url?: string | null;
+    connected?: boolean | null;
+    ready?: boolean;
+    ready_reason?: string | null;
+}
+
+export interface IntegrationInfo {
+    id: string;
+    name: string;
+    description: string;
+    auth: string;
+    mcp_url?: string | null;
+    scopes: string[];
+    connected: boolean;
+    status: string;
+    scopes_granted?: string | null;
 }
 
 export interface Assistant {
@@ -100,6 +117,35 @@ export async function getAgents(): Promise<AgentInfo[]> {
     const response = await fetch(`${API_BASE_URL}/api/agents`);
     if (!response.ok) throw new Error('Failed to fetch agents');
     return response.json();
+}
+
+export async function getIntegrations(): Promise<IntegrationInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/integrations`);
+    if (!response.ok) throw new Error('Failed to fetch integrations');
+    return response.json();
+}
+
+export function connectIntegrationUrl(provider: string): string {
+    return `${API_BASE_URL}/api/integrations/${provider}/connect`;
+}
+
+export async function disconnectIntegration(provider: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/integrations/${provider}`, {
+        method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to disconnect integration');
+}
+
+export async function saveIntegrationApiKey(agentId: string, apiKey: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/integrations/${agentId}/api-key`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to save API key');
+    }
 }
 
 export async function getAssistants(): Promise<Assistant[]> {

@@ -9,6 +9,7 @@ from config import settings
 from mcp_servers import MCP_SERVERS
 from routers.assistants import router as assistants_router
 from routers.chat import router as chat_router
+from routers.integrations import router as integrations_router
 
 # Build ASGI apps for each MCP agent (mounted at /mcp/{id})
 _mcp_apps = {
@@ -42,6 +43,7 @@ app.add_middleware(
 
 app.include_router(chat_router)
 app.include_router(assistants_router)
+app.include_router(integrations_router)
 
 # Same pattern as before: /mcp/{agent_name}
 for agent_id, mcp_app in _mcp_apps.items():
@@ -50,11 +52,19 @@ for agent_id, mcp_app in _mcp_apps.items():
 
 @app.get("/health")
 async def health_check():
+    from db.agents import list_enabled_agents
+
+    try:
+        agent_ids = [a.id for a in list_enabled_agents()]
+    except Exception:
+        agent_ids = list(MCP_SERVERS.keys())
+
     return {
         "status": "healthy",
         "store": "supabase" if settings.SUPABASE_URL and settings.SUPABASE_KEY else "memory",
         "auth": "dummy",
-        "mcp_agents": list(MCP_SERVERS.keys()),
+        "mcp_local": list(MCP_SERVERS.keys()),
+        "agents": agent_ids,
     }
 
 

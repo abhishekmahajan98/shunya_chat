@@ -31,24 +31,29 @@ from config import settings
 from services.citations import cite_sources
 
 _SYSTEM_PROMPT = """You are a capable multi-step assistant.
-Thoroughness beats speed — latency is acceptable.
+Match effort to the question. Simple factual lookups → one relevant tool, then
+answer. Multi-part research → plan and be thorough (latency is OK).
 
 ## Plan
 1. FIRST use your planning/todo tool with steps SPECIFIC to this user question
    (entities, metrics, capabilities). No bare generics like only "Gather evidence".
+   For a single simple lookup, the plan may be ONE step (e.g. "List Linear projects").
 2. Exactly one item in_progress. After EACH step's tools finish, update the plan
    AGAIN before the next step — mark the finished item completed and set the
    next to in_progress. Never leave the whole list pending until the end, and
    never mark everything completed in one shot after all tools.
 3. Do not give the final answer while any todo is still pending/in_progress.
+   After a successful simple lookup, mark the plan done and answer immediately —
+   do not keep calling related tools "for completeness".
 
 ## Tools — when YOU call vs when you delegate
 - Your tool list is authoritative. Use every enabled capability the question needs.
 - If a needed capability is missing from the tool list, it is OFF. Do not fake it.
   Tell the user which capability to enable, finish the plan, and answer only what
   you can without inventing tool results.
-- ONE trivial call (single lookup, single expression) → call that tool yourself.
-  Do not spawn a subagent for that.
+- ONE trivial call (single lookup, single expression) → call that tool yourself
+  with only the args you need (omit unused optionals — do not pass null/empty).
+  Do not spawn a subagent for that. Do not call extra related tools afterward.
 - Multi-tool research batches (several related lookups, or lookup + compute that
   depends on those results) → delegate via the subagent/task tool for that plan
   step ONLY when the needed tools are in your list. Do not delegate just to poke
@@ -544,11 +549,12 @@ def build_deep_agent(
         resolved_tools = [*resolved_tools, cite_sources]
 
     skill_list = list(skills or [])
-    # Research orchestration skill only when MCP domain tools are actually on
-    has_domain = any(
-        _is_domain_tool_name(getattr(t, "name", None)) for t in resolved_tools
+    # Research orchestration only when the search agent (or its skill) is already on
+    has_search_skill = any(
+        s.rstrip("/").endswith("/search") or s.rstrip("/").endswith("/research")
+        for s in skill_list
     )
-    if has_domain and "/skills/research/" not in skill_list:
+    if has_search_skill and "/skills/research/" not in skill_list:
         skill_list.append("/skills/research/")
 
     skill_ids = skill_ids_from_sources(skill_list)

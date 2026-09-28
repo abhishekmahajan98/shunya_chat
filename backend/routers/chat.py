@@ -29,9 +29,9 @@ async def list_models():
 
 
 @router.get("/agents", response_model=list[AgentInfo])
-async def list_agents():
+async def list_agents(user: DummyUser = Depends(get_current_user)):
     """Capability agents the UI can toggle. Any selected → deep_agent + MCP tools; none → basic_agent."""
-    return get_available_agents()
+    return get_available_agents(user_id=user.id)
 
 
 @router.post("/upload")

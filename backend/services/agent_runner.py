@@ -249,12 +249,26 @@ async def stream_chat(
     skill_sources: list[str] = []
     latest_todos: list[dict] = []
     if graph_id == "deep_agent":
-        from agents.mcp_tools import load_mcp_tools
         from agents.skills_loader import skill_sources_for_agents, skill_status_label
 
         try:
             if tool_agents:
-                extra_tools = await load_mcp_tools(tool_agents)
+                from agents.mcp_tools import load_tools_for_agents
+
+                skipped_remote: list[str] = []
+                extra_tools = await load_tools_for_agents(
+                    tool_agents, user_id, skipped_remote=skipped_remote
+                )
+                if skipped_remote:
+                    yield _sse(
+                        {
+                            "type": "status",
+                            "step_id": "integrations",
+                            "label": "Connect integrations to use these agents",
+                            "detail": ", ".join(skipped_remote),
+                        }
+                    )
+                    await _flush()
             else:
                 extra_tools = []
             _lap(f"mcp tools loaded n={len(extra_tools or [])}")
@@ -285,6 +299,7 @@ async def stream_chat(
                 )
                 await _flush()
         except Exception as exc:
+            logger.exception("Failed to load MCP tools")
             yield _sse({"type": "error", "content": f"Failed to load MCP tools: {exc}"})
             await _flush()
             extra_tools = []

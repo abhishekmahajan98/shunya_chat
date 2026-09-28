@@ -5,5 +5,6 @@ get_model_info = ModelRegistry.get_model_info
 AVAILABLE_MODELS = ModelRegistry.AVAILABLE_MODELS
 
 get_agent_info = AgentRegistry.get_agent_info
-AVAILABLE_AGENTS = get_available_agents()
+# Prefer get_available_agents(user_id=...) — catalog is DB-backed and per-user.
+AVAILABLE_AGENTS: list = []
 

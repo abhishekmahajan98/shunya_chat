@@ -23,7 +23,7 @@ def agents_with_skills(agent_ids: list[str]) -> list[str]:
 
 
 def skill_sources_for_agents(agent_ids: list[str]) -> list[str]:
-    """Per-selected-agent skills plus research when at least one agent is on.
+    """Per-selected-agent skills. Research only when search is enabled.
 
     Paths are virtual (POSIX) relative to FilesystemBackend root_dir=BACKEND_DIR,
     e.g. `/skills/search/`. With no agents selected, return [] — filesystem is
@@ -31,10 +31,20 @@ def skill_sources_for_agents(agent_ids: list[str]) -> list[str]:
     """
     if not agent_ids:
         return []
-    sources = [f"/skills/{agent_id}/" for agent_id in agents_with_skills(agent_ids)]
-    research = "/skills/research/"
-    if (SKILLS_DIR / "research" / "SKILL.md").is_file() and research not in sources:
-        sources.append(research)
+    from db.agents import get_agent
+
+    sources: list[str] = []
+    for agent_id in agent_ids:
+        agent = get_agent(agent_id)
+        skill_id = agent.skill_key if agent else agent_id
+        if (SKILLS_DIR / skill_id / "SKILL.md").is_file():
+            path = f"/skills/{skill_id}/"
+            if path not in sources:
+                sources.append(path)
+    if "search" in agent_ids:
+        research = "/skills/research/"
+        if (SKILLS_DIR / "research" / "SKILL.md").is_file() and research not in sources:
+            sources.append(research)
     return sources
 
 
@@ -162,14 +172,17 @@ def make_load_skill_tool(skill_ids: Sequence[str]) -> Any | None:
 
 def skill_status_label(agent_ids: list[str]) -> tuple[str, str]:
     """Friendly label/detail for the prep skills line."""
-    from mcp_servers import AGENT_CATALOG
+    from db.agents import get_agent
 
     if not agent_ids:
         return ("", "")
-    names_by_id = {a["id"]: a["name"] for a in AGENT_CATALOG}
-    skilled = agents_with_skills(agent_ids)
-    names = [names_by_id.get(aid, aid) for aid in skilled]
-    if (SKILLS_DIR / "research" / "SKILL.md").is_file():
+    names: list[str] = []
+    for aid in agent_ids:
+        agent = get_agent(aid)
+        skill_id = agent.skill_key if agent else aid
+        if (SKILLS_DIR / skill_id / "SKILL.md").is_file():
+            names.append(agent.name if agent else aid)
+    if "search" in agent_ids and (SKILLS_DIR / "research" / "SKILL.md").is_file():
         names = [*names, "Research"]
     if not names:
         return ("", "")

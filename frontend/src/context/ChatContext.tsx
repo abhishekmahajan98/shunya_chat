@@ -73,6 +73,7 @@ interface ChatContextType {
     selectedAgentIds: string[];
     toggleAgent: (agentId: string) => void;
     setSelectedAgentIds: (ids: string[]) => void;
+    refreshAgents: () => Promise<void>;
 
     conversations: ConversationSummary[];
     isLoadingHistory: boolean;
@@ -109,13 +110,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const refreshAllData = async () => {
+    const refreshAgents = async () => {
         try {
             const agents = await getAgents();
             setAvailableAgents(agents);
         } catch (error) {
             console.error('Failed to load agents:', error);
         }
+    };
+
+    const refreshAllData = async () => {
+        await refreshAgents();
         await refreshHistory();
     };
 
@@ -237,6 +242,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 selectedAgentIds,
                 toggleAgent,
                 setSelectedAgentIds,
+                refreshAgents,
                 conversations,
                 isLoadingHistory,
                 hasMoreHistory,
